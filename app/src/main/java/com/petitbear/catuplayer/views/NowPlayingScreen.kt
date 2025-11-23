@@ -30,8 +30,10 @@ import com.petitbear.catuplayer.models.Screen
 import com.petitbear.catuplayer.ui.theme.CatuPlayerTheme
 import com.petitbear.catuplayer.utils.MusicMetadataUtils
 import kotlinx.coroutines.delay
+import androidx.compose.runtime.collectAsState
+import com.petitbear.catuplayer.models.AudioPlayerViewModel
 
-// NowPlayingScreen.kt - 修复播放控制
+// NowPlayingScreen.kt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewModel) {
@@ -92,7 +94,15 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                 Text("暂无播放的歌曲")
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
-                    onClick = { navController.navigate(Screen.Playlist.route) }
+                    onClick = {
+                        navController.navigate(Screen.Playlist.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
                 ) {
                     Text("选择歌曲")
                 }
@@ -210,7 +220,7 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                                     // 需要上下文来播放上一首
                                 },
                                 modifier = Modifier.size(56.dp),
-                                enabled = viewModel.playlist.value.size > 1
+                                enabled = viewModel.playlist.collectAsState().value.size > 1
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.SkipPrevious,
@@ -250,7 +260,7 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                                     viewModel.playNext(context)
                                 },
                                 modifier = Modifier.size(56.dp),
-                                enabled = viewModel.playlist.value.size > 1
+                                enabled = viewModel.playlist.collectAsState().value.size > 1
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.SkipNext,
@@ -298,15 +308,4 @@ private fun formatTime(milliseconds: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return String.format("%02d:%02d", minutes, seconds)
-}
-
-@Preview(showBackground = true, name = "播放界面预览")
-@Composable
-fun NowPlayingScreenPreview() {
-    CatuPlayerTheme {
-        NowPlayingScreen(
-            navController = rememberNavController(),
-            viewModel = AudioPlayerViewModel()
-        )
-    }
 }

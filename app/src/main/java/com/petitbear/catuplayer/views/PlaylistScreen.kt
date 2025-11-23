@@ -25,6 +25,7 @@ import androidx.navigation.compose.rememberNavController
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
+import com.petitbear.catuplayer.models.AudioPlayerViewModel
 import com.petitbear.catuplayer.models.Screen
 import com.petitbear.catuplayer.ui.theme.CatuPlayerTheme
 import kotlinx.coroutines.delay
@@ -238,16 +239,5 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
                 }
             }
         }
-    }
-}
-
-@Preview(showBackground = true, name = "播放列表预览")
-@Composable
-fun PlaylistScreenPreview() {
-    CatuPlayerTheme {
-        PlaylistScreen(
-            navController = rememberNavController(),
-            viewModel = AudioPlayerViewModel()
-        )
     }
 }

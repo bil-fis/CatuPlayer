@@ -28,7 +28,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.petitbear.catuplayer.models.Screen
 import com.petitbear.catuplayer.ui.theme.CatuPlayerTheme
-import com.petitbear.catuplayer.views.AudioPlayerViewModel
+import com.petitbear.catuplayer.models.AudioPlayerViewModel
 import com.petitbear.catuplayer.views.HomeScreen
 import com.petitbear.catuplayer.views.Meme
 import com.petitbear.catuplayer.views.NowPlayingScreen

@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.petitbear.catuplayer.models.AudioPlayerViewModel
 import com.petitbear.catuplayer.ui.theme.CatuPlayerTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
