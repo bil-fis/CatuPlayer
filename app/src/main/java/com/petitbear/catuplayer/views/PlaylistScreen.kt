@@ -1,12 +1,11 @@
 package com.petitbear.catuplayer.views
 
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicOff
 import androidx.compose.material.icons.filled.PlayArrow
@@ -16,18 +15,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.compose.rememberNavController
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
 import com.petitbear.catuplayer.models.AudioPlayerViewModel
 import com.petitbear.catuplayer.models.Screen
-import com.petitbear.catuplayer.ui.theme.CatuPlayerTheme
+import com.petitbear.catuplayer.utils.PlaylistFileManager
+import com.petitbear.catuplayer.utils.UriPermissionRestorer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -41,13 +35,36 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    // 播放列表管理器
+    val playlistManager = PlaylistFileManager(context)
+    // 权限恢复
+    val permissionRestorer = UriPermissionRestorer(context)
+
     var showFilePickerDialog by remember { mutableStateOf(false) }
+
+    // 在启动时加载播放列表并恢复权限
+    LaunchedEffect(Unit) {
+        playlistManager.loadPlaylist().fold(
+            onSuccess = { songs ->
+                Log.d("MusicPlayer", "播放列表加载成功: ${songs.size} 首歌曲")
+
+                // 恢复所有歌曲的URI权限
+                val restoredCount = permissionRestorer.restoreUriPermissions(
+                    songs.map { it.uri }
+                )
+                Log.d("MusicPlayer", "成功恢复 $restoredCount 个URI的权限")
+
+                viewModel.setPlayList(songs)
+            },
+            onFailure = { error ->
+                Log.e("MusicPlayer", "播放列表加载失败: ${error.message}")
+            }
+        )
+    }
 
     // 显示错误消息
     if (errorMessage != null) {
         LaunchedEffect(errorMessage) {
-            // 可以显示Snackbar或Toast
-            // 这里简单地在3秒后清除错误
             delay(3000)
             viewModel.clearError()
         }
@@ -80,6 +97,7 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
                 onFilesSelected = { files ->
                     coroutineScope.launch {
                         viewModel.addSongsToPlaylist(context, files)
+                        playlistManager.savePlaylist(viewModel.playlist.value)
                     }
                 }
             )

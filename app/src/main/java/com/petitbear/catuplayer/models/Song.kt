@@ -1,9 +1,11 @@
 package com.petitbear.catuplayer.models
 
 import com.petitbear.catuplayer.utils.MusicMetadataUtils
+import kotlinx.serialization.Serializable
 
 // 歌曲模型类
 // Song.kt
+@Serializable
 data class Song(
     val id: String,
     val title: String,
@@ -11,7 +13,10 @@ data class Song(
     val duration: Long,
     val uri: String,
     val album: String = "",
-    val hasMetadata: Boolean = false
+    val hasMetadata: Boolean = false,
+    val coverUri: String = "",
+    val lrcUri: String = ""
+
 ) {
     val formattedDuration: String
         get() = MusicMetadataUtils.formatDuration(duration)

@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -82,4 +83,15 @@ dependencies {
     implementation("androidx.media2:media2-widget:1.2.1")
 
     implementation("com.jakewharton.timber:timber:5.0.1")
+
+    implementation("org.graalvm.js:js:22.3.3")
+    implementation("org.graalvm.js:js-scriptengine:22.3.3")
+    implementation("org.graalvm.truffle:truffle-api:22.3.3")
+// 用于插件管理
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("com.google.code.gson:gson:2.10.1")
+
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+// 使用 Coil 显示图片
+    implementation("io.coil-kt:coil-compose:2.5.0")
 }

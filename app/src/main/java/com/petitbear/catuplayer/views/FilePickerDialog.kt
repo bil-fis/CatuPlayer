@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import android.content.Intent
 
 @Composable
 fun FilePickerDialog(
@@ -24,11 +25,23 @@ fun FilePickerDialog(
     val context = LocalContext.current
     var showFilePicker by remember { mutableStateOf(false) }
 
-    // 文件选择器
+    // 文件选择器 - 使用 OpenDocument 而不是 OpenMultipleDocuments 以获得持久化权限
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isNotEmpty()) {
+            // 获取持久化权限
+            uris.forEach { uri ->
+                try {
+                    val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    context.contentResolver.takePersistableUriPermission(uri, flags)
+                } catch (e: SecurityException) {
+                    // 处理权限获取失败的情况
+                    e.printStackTrace()
+                }
+            }
+
             val files = uris.mapNotNull { uri ->
                 // 在实际应用中，这里应该异步获取文件名
                 // 为了简化，我们使用URI的最后路径段作为文件名
