@@ -82,11 +82,9 @@ fun BottomNavigationBar(
     currentRoute: String? // 可能为null
 ) {
     NavigationBar {
-        // ✅ 安全遍历：确保列表不为空且没有null
         val navItems = Screen.bottomNavScreens.filterNotNull()
 
         navItems.forEach { screen ->
-            // ✅ 安全访问：确保screen不为null
             val icon = when (screen) {
                 is Screen.Home -> Icons.Default.Home
                 is Screen.Playlist -> Icons.AutoMirrored.Filled.List
@@ -101,7 +99,6 @@ fun BottomNavigationBar(
                     Icon(icon, contentDescription = screen.title)
                 },
                 label = { Text(screen.title) },
-                // ✅ 安全比较：处理currentRoute可能为null的情况
                 selected = currentRoute == screen.route,
                 onClick = {
                     navController.navigate(screen.route) {

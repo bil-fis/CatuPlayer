@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- 添加前台服务权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- 如果使用音频焦点，添加音频权限 -->
     <uses-permission android:name="android.permission.AUDIO_FOCUS" />
 
@@ -26,22 +26,8 @@
         android:label="@string/app_name"
         android:roundIcon="@drawable/cyrene"
         android:supportsRtl="true"
-        android:theme="@style/Theme.CatuPlayer">
-        <service
-            android:name=".media.MediaPlaybackService"
-            android:exported="true"
-            android:foregroundServiceType="mediaPlayback"
-            android:enabled="true">
-            <intent-filter>
-                <action android:name="android.media.browse.MediaBrowserService" />
-            </intent-filter>
-        </service>
-        <receiver android:name="androidx.media.session.MediaButtonReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </receiver>
+        android:theme="@style/Theme.CatuPlayer"
+        android:enableOnBackInvokedCallback="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -24,28 +24,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.petitbear.catuplayer.media.MediaPlaybackService
 import com.petitbear.catuplayer.ui.theme.CatuPlayerTheme
 import com.petitbear.catuplayer.models.AudioPlayerViewModel
 import timber.log.Timber
 
 class MainActivity : ComponentActivity() {
-    private var mediaPlaybackService: MediaPlaybackService? = null
-    private var isBound = false
     private var viewModel: AudioPlayerViewModel? = null
-
-    private val connection = object : ServiceConnection {
-        override fun onServiceConnected(className: ComponentName, service: IBinder) {
-            val binder = service as MediaPlaybackService.MediaPlaybackBinder
-            mediaPlaybackService = binder.getService()
-            isBound = true
-        }
-
-        override fun onServiceDisconnected(arg0: ComponentName) {
-            isBound = false
-            mediaPlaybackService = null
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,24 +45,12 @@ class MainActivity : ComponentActivity() {
                     val audioPlayerViewModel: AudioPlayerViewModel = viewModel()
                     this.viewModel = audioPlayerViewModel
 
-                    // 当服务绑定后，设置到 ViewModel
-                    if (isBound && mediaPlaybackService != null) {
-                        LaunchedEffect(mediaPlaybackService) {
-                            audioPlayerViewModel.setMediaPlaybackService(mediaPlaybackService!!)
-                            // 同时将 ViewModel 设置到 Service
-                            mediaPlaybackService?.setViewModel(audioPlayerViewModel)
-                        }
-                    }
-
                     CatuApp(audioPlayerViewModel)
                 }
             }
         }
 
-        // 在设置内容后启动服务
-        val intent = Intent(this, MediaPlaybackService::class.java)
-        startService(intent)
-        bindService(intent, connection, Context.BIND_AUTO_CREATE)
+
     }
 
     /*
@@ -99,7 +71,6 @@ class MainActivity : ComponentActivity() {
         requestPermissions(permissions,1)
     }
 
-    @Deprecated("Deprecated in Java")
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         //是否获取到权限

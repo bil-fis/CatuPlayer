@@ -158,7 +158,7 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
                     Card(
                         onClick = {
                             if (song.canPlay) {
-                                viewModel.playSong(song, context)
+                                viewModel.playSong(song)
                                 navController.navigate(Screen.NowPlaying.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true

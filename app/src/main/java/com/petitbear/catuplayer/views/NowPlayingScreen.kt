@@ -43,7 +43,28 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
     val currentPosition by viewModel.currentPosition.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val isSeeking by viewModel.isSeeking.collectAsState()
     val context = LocalContext.current
+
+    // 添加本地状态来管理进度条
+    var sliderProgress by remember { mutableStateOf(0f) }
+    var isSliderDragging by remember { mutableStateOf(false) }
+    var displayPosition by remember { mutableStateOf(0L) } // 用于显示的时间位置
+
+    // 当不是拖动状态且不是在跳转时，同步进度条位置
+    LaunchedEffect(progress, isSliderDragging, isSeeking) {
+        if (!isSliderDragging && !isSeeking) {
+            sliderProgress = progress
+            displayPosition = currentPosition
+        }
+    }
+
+    // 同步显示位置
+    LaunchedEffect(currentPosition) {
+        if (!isSliderDragging && !isSeeking) {
+            displayPosition = currentPosition
+        }
+    }
 
     // 显示错误消息
     if (errorMessage != null) {
@@ -116,8 +137,8 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(32.dp)
             ) {
-                // 加载状态
-                if (isLoading) {
+                // 只在真正加载时显示加载状态，跳转时不显示
+                if (isLoading && !isSeeking) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -174,13 +195,13 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // 时间显示
+                        // 时间显示 - 使用 displayPosition 而不是 currentPosition
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = MusicMetadataUtils.formatDuration(currentPosition),
+                                text = MusicMetadataUtils.formatDuration(displayPosition),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -193,10 +214,21 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // 进度条
+                        // 进度条 - 使用本地状态实现平滑滑动
                         Slider(
-                            value = progress,
-                            onValueChange = { viewModel.seekTo(it) },
+                            value = sliderProgress,
+                            onValueChange = { newProgress ->
+                                isSliderDragging = true
+                                sliderProgress = newProgress
+                                // 实时更新显示的时间（但不实际跳转）
+                                val newPosition = (currentSong!!.duration * newProgress).toLong()
+                                displayPosition = newPosition // 更新本地显示位置
+                            },
+                            onValueChangeFinished = {
+                                isSliderDragging = false
+                                // 只在拖动结束时执行实际的跳转
+                                viewModel.seekTo(sliderProgress)
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = currentSong!!.duration > 0
                         )
@@ -217,7 +249,6 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                             IconButton(
                                 onClick = {
                                     viewModel.playPrevious(context)
-                                    // 需要上下文来播放上一首
                                 },
                                 modifier = Modifier.size(56.dp),
                                 enabled = viewModel.playlist.collectAsState().value.size > 1
@@ -239,7 +270,7 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                                 ),
                                 enabled = currentSong!!.canPlay
                             ) {
-                                if (isLoading) {
+                                if (isLoading && !isSeeking) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(36.dp),
                                         color = MaterialTheme.colorScheme.onPrimary,
