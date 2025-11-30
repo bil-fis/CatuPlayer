@@ -179,7 +179,7 @@ object MusicMetadataUtils {
     suspend fun clearCoverCache(context: Context) {
         withContext(Dispatchers.IO) {
             try {
-                val cacheDir = File(context.filesDir, "covers")
+                val cacheDir = File(context.getExternalFilesDir(null), "covers")
                 if (cacheDir.exists() && cacheDir.isDirectory) {
                     cacheDir.listFiles()?.forEach { file ->
                         file.delete()
@@ -197,7 +197,7 @@ object MusicMetadataUtils {
     suspend fun getCoverCacheSize(context: Context): Long {
         return withContext(Dispatchers.IO) {
             try {
-                val cacheDir = File(context.filesDir, "covers")
+                val cacheDir = File(context.getExternalFilesDir(null), "covers")
                 if (cacheDir.exists() && cacheDir.isDirectory) {
                     cacheDir.listFiles()?.sumOf { it.length() } ?: 0
                 } else {

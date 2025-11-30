@@ -1,20 +1,32 @@
 package com.petitbear.catuplayer.models
 
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import androidx.media3.session.MediaSession
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
+import com.petitbear.catuplayer.media.PlayBackService
 import com.petitbear.catuplayer.utils.LrcLyric
 import com.petitbear.catuplayer.utils.LrcParser
 import com.petitbear.catuplayer.utils.MusicMetadataUtils
@@ -32,10 +44,20 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 
 class AudioPlayerViewModel(application: Application) : AndroidViewModel(application) {
+
+    // 播放器相关
     private var exoPlayer: ExoPlayer?=null
     private val appContext : Context
         get() = getApplication<Application>().applicationContext
     private var job: Job? = null
+
+    // media session
+    private val _mediaController = MutableLiveData<MediaController?>()
+    val mediaController: LiveData<MediaController?> = _mediaController
+    private val _isMediaControllerReady = MutableStateFlow(false)
+    val isMediaControllerReady: StateFlow<Boolean> = _isMediaControllerReady.asStateFlow()
+
+    private var controllerFuture: ListenableFuture<MediaController>? = null
 
     // 播放状态
     private val _isPlaying = MutableStateFlow(false)
@@ -88,8 +110,115 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var _isSeeking = MutableStateFlow(false)
     val isSeeking: StateFlow<Boolean> = _isSeeking.asStateFlow()
 
+    // 添加广播接收器
+    private val playbackActionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.getStringExtra("action")) {
+                "previous" -> handleExternalPrevious()
+                "next" -> handleExternalNext()
+                "toggle" -> handleExternalToggle()
+            }
+        }
+    }
+
     init {
-        initializeExoPlayer()
+        initializeMediaController()
+        registerPlaybackActionReceiver()
+    }
+
+    private fun registerPlaybackActionReceiver() {
+        val filter = IntentFilter("com.petitbear.catuplayer.PLAYBACK_ACTION")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Android 8.0+ 需要指定标志
+            appContext.registerReceiver(
+                playbackActionReceiver,
+                filter,
+                Context.RECEIVER_NOT_EXPORTED  // 这是应用内广播，不需要导出
+            )
+        } else {
+            // Android 8.0 以下的旧方法
+            appContext.registerReceiver(playbackActionReceiver, filter)
+        }
+    }
+    fun initializeMediaController() {
+        try {
+            val sessionToken = SessionToken(appContext, ComponentName(appContext, PlayBackService::class.java))
+
+            controllerFuture = MediaController.Builder(appContext, sessionToken).buildAsync()
+
+            controllerFuture?.addListener({
+                try {
+                    val controller = controllerFuture?.get()
+                    _mediaController.postValue(controller)
+                    _isMediaControllerReady.value = true
+
+                    // 添加播放器状态监听器
+                    controller?.addListener(object : Player.Listener {
+                        override fun onPlaybackStateChanged(playbackState: Int) {
+                            when (playbackState) {
+                                Player.STATE_READY -> {
+                                    _isLoading.value = false
+                                    _isPlaying.value = controller.isPlaying
+                                    // 确保进度更新在准备好时启动
+                                    if (controller.isPlaying) {
+                                        startProgressUpdates()
+                                    }
+                                }
+                                Player.STATE_BUFFERING -> {
+                                    _isLoading.value = true
+                                }
+                                Player.STATE_ENDED -> {
+                                    _isPlaying.value = false
+                                    stopProgressUpdates()
+                                    playNext(appContext)
+                                }
+                                Player.STATE_IDLE -> {
+                                    _isPlaying.value = false
+                                    stopProgressUpdates()
+                                }
+                                else -> {
+                                    _isLoading.value = false
+                                }
+                            }
+                        }
+
+                        override fun onIsPlayingChanged(isPlaying: Boolean) {
+                            _isPlaying.value = isPlaying
+                            if (isPlaying) {
+                                startProgressUpdates()
+                            } else {
+                                stopProgressUpdates()
+                            }
+                        }
+
+                        override fun onPlayerError(error: PlaybackException) {
+                            _errorMessage.value = "播放错误: ${error.message}"
+                            _isLoading.value = false
+                            stopProgressUpdates()
+                        }
+
+                        // 添加位置变化监听，确保进度同步
+                        override fun onPositionDiscontinuity(
+                            oldPosition: Player.PositionInfo,
+                            newPosition: Player.PositionInfo,
+                            reason: Int
+                        ) {
+                            updateProgress()
+                        }
+                    })
+
+                    Log.d("PlayerViewModel", "MediaController初始化成功")
+                } catch (e: Exception) {
+                    Log.e("PlayerViewModel", "MediaController创建失败", e)
+                    _mediaController.postValue(null)
+                    _isMediaControllerReady.value = false
+                }
+            }, ContextCompat.getMainExecutor(appContext))
+        } catch (e: Exception) {
+            Log.e("PlayerViewModel", "SessionToken创建失败", e)
+            _isMediaControllerReady.value = false
+        }
     }
 
     private fun requestAudioFocus(): Boolean {
@@ -107,15 +236,15 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 when (focusChange) {
                     AudioManager.AUDIOFOCUS_LOSS -> {
                         // 长时间失去焦点，停止播放
-                        exoPlayer?.pause()
+                        _mediaController.value?.pause()
                     }
                     AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                         // 短暂失去焦点，暂停播放
-                        exoPlayer?.pause()
+                        _mediaController.value?.pause()
                     }
                     AudioManager.AUDIOFOCUS_GAIN -> {
                         // 重新获得焦点，恢复播放
-                        exoPlayer?.play()
+                        _mediaController.value?.play()
                     }
                 }
             }
@@ -124,75 +253,10 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return audioManager.requestAudioFocus(audioFocusRequest!!) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
     }
 
-    private fun initializeExoPlayer(){
-        val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
-            .setUsage(androidx.media3.common.C.USAGE_MEDIA)
-            .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
-            .build()
-
-        // 优化ExoPlayer构建器配置，减少AudioTrack重建
-        exoPlayer = ExoPlayer.Builder(appContext)
-            .setAudioAttributes(audioAttributes, true)
-            .setHandleAudioBecomingNoisy(true)
-            .setSeekBackIncrementMs(5000) // 5秒后退
-            .setSeekForwardIncrementMs(15000) // 15秒前进
-            .build().apply{
-                addListener(object : Player.Listener{
-                    override fun onPlaybackStateChanged(playbackState: @Player.State Int) {
-                        when (playbackState) {
-                            Player.STATE_READY -> {
-                                _isLoading.value = false
-                                updateProgress()
-                            }
-                            Player.STATE_BUFFERING -> {
-                                _isLoading.value = true
-                            }
-                            Player.STATE_ENDED -> {
-                                _isPlaying.value = false
-                                _progress.value = 1f
-                                // 延迟播放下一首，避免立即重建AudioTrack
-                                viewModelScope.launch {
-                                    delay(100) // 给系统一些时间清理资源
-                                    playNext(appContext)
-                                }
-                            }
-                            Player.STATE_IDLE -> {
-                                _isPlaying.value = false
-                                _isLoading.value = false
-                            }
-                        }
-                    }
-                    override fun onIsPlayingChanged(isPlaying: Boolean) {
-                        _isPlaying.value = isPlaying
-                        if (isPlaying) {
-                            startProgressUpdates()
-                        } else {
-                            stopProgressUpdates()
-                        }
-                    }
-
-                    override fun onPlayerError(error: PlaybackException) {
-                        _errorMessage.value = "播放错误：${error.message}"
-                        _isPlaying.value = false
-                        _isLoading.value = false
-                    }
-
-                    override fun onPositionDiscontinuity(
-                        oldPosition: Player.PositionInfo,
-                        newPosition: Player.PositionInfo,
-                        reason: Int
-                    ) {
-                        updateProgress()
-                    }
-                })
-                repeatMode = Player.REPEAT_MODE_OFF
-            }
-    }
-
     private fun updateProgress() {
         if (_isSeeking.value) return // 如果正在跳转，跳过自动更新
 
-        exoPlayer?.let { player ->
+        _mediaController.value?.let { player ->
             val currentPos = player.currentPosition
             val duration = player.duration
 
@@ -278,10 +342,10 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun startProgressUpdates() {
         job?.cancel()
-        job = CoroutineScope(Dispatchers.Main).launch {
-            while (isActive && _isPlaying.value) {
+        job = viewModelScope.launch {
+            while (isActive) {
                 updateProgress()
-                delay(1000) // 降低更新频率，从500ms改为1000ms
+                delay(1000) // 每秒更新一次
             }
         }
     }
@@ -291,7 +355,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         job = null
     }
 
-    fun playSong(song: Song) {
+    fun playSong(song: Song, fromExternal: Boolean = false) {
+        if (!_isMediaControllerReady.value) {
+            _errorMessage.value = "播放器未就绪，请稍后重试"
+            return
+        }
+
         if (song.uri.isEmpty()) {
             _errorMessage.value = "无效的音乐文件路径"
             return
@@ -300,8 +369,11 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _isLoading.value = true
         _errorMessage.value = null
 
-        exoPlayer?.let { player ->
+        _mediaController.value?.let { player ->
             try {
+                // 先停止当前的进度更新
+                stopProgressUpdates()
+
                 // 检查是否正在播放同一首歌曲
                 if (_currentSong.value?.id == song.id) {
                     if (!player.isPlaying) {
@@ -320,32 +392,24 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 _progress.value = 0f
                 _currentPosition.value = 0L
 
-                // 使用更高效的媒体项设置方式
-                val mediaItem = MediaItem.Builder()
-                    .setUri(song.uri)
-                    .setMediaId(song.id)
-                    .build()
-
-                // 停止当前播放但不释放资源
-                player.stop()
+                // 设置媒体项并准备播放
+                val mediaItem = MediaItem.fromUri(song.uri)
                 player.setMediaItem(mediaItem)
                 player.prepare()
-
-                // 启动播放
                 player.play()
+
+                // 确保播放状态正确更新
                 _isPlaying.value = true
 
                 // 启动进度更新
                 startProgressUpdates()
 
-                // 在后台加载歌词
-                backgroundScope.launch {
-                    loadLyricsForSong(song)
-                }
-
-                // 在后台加载专辑封面
-                backgroundScope.launch {
-                    loadAlbumCover(song)
+                // 在后台加载歌词和封面
+                if (!fromExternal) {
+                    viewModelScope.launch {
+                        loadLyricsForSong(song)
+                        loadAlbumCover(song)
+                    }
                 }
 
             } catch (e: Exception) {
@@ -353,17 +417,20 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 _isLoading.value = false
                 e.printStackTrace()
             }
+        } ?: run {
+            _errorMessage.value = "播放器未初始化"
+            _isLoading.value = false
         }
     }
 
     fun pauseOrResume() {
-        exoPlayer?.let { player ->
+        _mediaController.value?.let { player ->
             if (player.isPlaying) {
                 player.pause()
                 _isPlaying.value = false
                 stopProgressUpdates()
             } else {
-                player.play() // 如果已经准备好，这会恢复播放
+                player.play()
                 _isPlaying.value = true
                 startProgressUpdates()
             }
@@ -374,7 +441,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         // 设置正在跳转状态
         _isSeeking.value = true
 
-        exoPlayer?.let { player ->
+        _mediaController.value?.let { player ->
             val duration = player.duration
             if (duration > 0 && duration != C.TIME_UNSET) {
                 val newPosition = (duration * progress).toLong()
@@ -394,7 +461,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     // 实际执行跳转的方法
     private fun performSeek(progress: Float) {
-        exoPlayer?.let { player ->
+        _mediaController.value?.let { player ->
             val duration = player.duration
             if (duration > 0 && duration != C.TIME_UNSET) {
                 val newPosition = (duration * progress).toLong()
@@ -546,9 +613,18 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         backgroundScope.cancel()
         seekJob?.cancel() // 取消防抖任务
 
-        // 释放 ExoPlayer
-        exoPlayer?.release()
-        exoPlayer = null
+        try {
+            appContext.unregisterReceiver(playbackActionReceiver)
+        } catch (e: Exception) {
+            // 忽略取消注册异常
+        }
+
+
+        // 释放 媒体控制器
+        _mediaController.value?.run {
+            release()
+        }
+        controllerFuture?.cancel(true)
     }
 
     fun playNext(context: Context) {
@@ -574,4 +650,95 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             playSong(list[list.size - 1])
         }
     }
+
+    // 处理来自外部的控制请求（避免递归）
+    private fun handleExternalPrevious() {
+        viewModelScope.launch {
+            delay(50)
+            val current = _currentSong.value
+            val list = _playlist.value
+            if (current != null && list.isNotEmpty()) {
+                val currentIndex = list.indexOfFirst { it.id == current.id }
+                val prevIndex = if (currentIndex - 1 < 0) list.size - 1 else currentIndex - 1
+                val previousSong = list[prevIndex]
+                _currentSong.value = previousSong
+
+                _mediaController.value?.let { player ->
+                    // 先停止当前的进度更新
+                    stopProgressUpdates()
+
+                    val mediaItem = MediaItem.fromUri(previousSong.uri)
+                    player.setMediaItem(mediaItem)
+                    player.prepare()
+                    player.play()
+
+                    // 确保播放状态正确更新
+                    _isPlaying.value = true
+
+                    // 立即启动进度更新
+                    startProgressUpdates()
+
+                    // 加载歌词和封面
+                    viewModelScope.launch {
+                        loadLyricsForSong(previousSong)
+                        loadAlbumCover(previousSong)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleExternalNext() {
+        viewModelScope.launch {
+            delay(50)
+            val current = _currentSong.value
+            val list = _playlist.value
+            if (current != null && list.isNotEmpty()) {
+                val currentIndex = list.indexOfFirst { it.id == current.id }
+                val nextIndex = (currentIndex + 1) % list.size
+                val nextSong = list[nextIndex]
+                _currentSong.value = nextSong
+
+                _mediaController.value?.let { player ->
+                    // 先停止当前的进度更新
+                    stopProgressUpdates()
+
+                    val mediaItem = MediaItem.fromUri(nextSong.uri)
+                    player.setMediaItem(mediaItem)
+                    player.prepare()
+                    player.play()
+
+                    // 确保播放状态正确更新
+                    _isPlaying.value = true
+
+                    // 立即启动进度更新
+                    startProgressUpdates()
+
+                    viewModelScope.launch {
+                        loadLyricsForSong(nextSong)
+                        loadAlbumCover(nextSong)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleExternalToggle() {
+        _mediaController.value?.let { player ->
+            if (player.isPlaying) {
+                player.pause()
+                _isPlaying.value = false
+                stopProgressUpdates()
+            } else {
+                player.play()
+                _isPlaying.value = true
+                startProgressUpdates()
+            }
+        }
+    }
+
+    fun forceUpdateProgress() {
+        updateProgress()
+    }
+
 }
