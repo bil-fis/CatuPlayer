@@ -5,6 +5,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.20-blue.svg)](https://kotlinlang.org)
 [![Android](https://img.shields.io/badge/Android-SDK%2021+-green.svg)](https://developer.android.com)
 [![License](https://img.shields.io/badge/License-GPL%203.0-yellow.svg)](https://opensource.org/license/gpl-3-0)
+[![Android CI](https://github.com/bil-fis/CatuPlayer/actions/workflows/android.yml/badge.svg)](https://github.com/bil-fis/CatuPlayer/actions/workflows/android.yml)
 
 </div>
 
