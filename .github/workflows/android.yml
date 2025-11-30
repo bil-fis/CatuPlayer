@@ -26,14 +26,9 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # 先尝试诊断构建
-      - name: Diagnose Gradle warnings
-        run: ./gradlew build --warning-mode all
-        continue-on-error: true  # 即使有警告也继续
-
       # 正式构建（忽略警告）
       - name: Build Release APK
-        run: ./gradlew assembleRelease --warning-mode none
+        run: ./gradlew build --warning-mode none
 
       - name: Get tag version
         id: get_version
