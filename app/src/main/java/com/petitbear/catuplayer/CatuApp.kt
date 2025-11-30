@@ -21,6 +21,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navigation
 import com.petitbear.catuplayer.models.AudioPlayerViewModel
 import com.petitbear.catuplayer.models.Screen
 import com.petitbear.catuplayer.ui.theme.CatuPlayerTheme
@@ -29,6 +30,7 @@ import com.petitbear.catuplayer.views.Meme
 import com.petitbear.catuplayer.views.NowPlayingScreen
 import com.petitbear.catuplayer.views.PlaylistScreen
 import com.petitbear.catuplayer.views.SearchPage
+import com.petitbear.catuplayer.views.settingsView.ClearCachePage
 
 @Composable
 fun CatuApp(viewModel: AudioPlayerViewModel) {
@@ -37,12 +39,25 @@ fun CatuApp(viewModel: AudioPlayerViewModel) {
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentRoute = navBackStackEntry?.destination?.route
 
+        val currentBackStackEntry by navController.currentBackStackEntryAsState()
+        val currentDestination = currentBackStackEntry?.destination
+
+// 定义哪些页面需要显示底部导航栏
+        val shouldShowBottomBar = when (currentDestination?.route) {
+            Screen.Home.route -> true
+            Screen.SearchPage.route -> true
+            Screen.Playlist.route -> true
+            Screen.NowPlaying.route -> true
+            Screen.Mine.route -> true
+            else -> false // 其他页面（如 ClearCache）不显示底部栏
+        }
+
+
         Scaffold(
             bottomBar = {
-                BottomNavigationBar(
-                    navController = navController,
-                    currentRoute = currentRoute
-                )
+                if (shouldShowBottomBar) {
+                    BottomNavigationBar(navController,currentRoute)
+                }
             }
         ) { padding ->
             NavHost(
@@ -64,6 +79,11 @@ fun CatuApp(viewModel: AudioPlayerViewModel) {
                 }
                 composable(Screen.Mine.route) {
                     Meme(navController, viewModel)
+                }
+
+                    composable(Screen.ClearCache.route) {
+                        ClearCachePage()
+
                 }
             }
         }
