@@ -10,6 +10,8 @@ on:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 确保GITHUB_TOKEN有写入权限以创建Release[citation:3][citation:5]
 
     steps:
       - uses: actions/checkout@v4
@@ -29,18 +31,37 @@ jobs:
 
       - name: Get tag version
         id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        # 修正版本提取逻辑：仅当为标签时提取版本号
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+            echo "IS_TAG=true" >> $GITHUB_OUTPUT
+          else
+            echo "IS_TAG=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Get current timestamp
         id: timestamp
         run: echo "TIME=$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
 
       - name: Rename APK file
+        # 添加条件：仅在标签上执行
+        if: steps.get_version.outputs.IS_TAG == 'true'
         run: |
           mkdir -p release_files
-          cp app/build/outputs/apk/release/*.apk "release_files/CatuPlayer_v${{ steps.get_version.outputs.VERSION }}+build${{ steps.timestamp.outputs.TIME }}.apk"
+          # 确保源APK文件存在
+          if ls app/build/outputs/apk/release/*.apk 1> /dev/null 2>&1; then
+            cp app/build/outputs/apk/release/*.apk "release_files/CatuPlayer_v${{ steps.get_version.outputs.VERSION }}+build${{ steps.timestamp.outputs.TIME }}.apk"
+            echo "APK renamed successfully."
+          else
+            echo "Error: No APK file found in app/build/outputs/apk/release/"
+            exit 1
+          fi
 
       - name: Upload Release Asset
+        # 添加条件：仅在标签上执行
+        if: steps.get_version.outputs.IS_TAG == 'true'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref }}
