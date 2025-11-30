@@ -27,9 +27,11 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.petitbear.catuplayer.media.PlayBackService
+import com.petitbear.catuplayer.utils.FileReadingUtils
 import com.petitbear.catuplayer.utils.LrcLyric
 import com.petitbear.catuplayer.utils.LrcParser
 import com.petitbear.catuplayer.utils.MusicMetadataUtils
+import com.petitbear.catuplayer.utils.UriPermissionRestorer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -293,9 +295,9 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             try {
                 val lrcPath = song.uri.substringBeforeLast(".") + ".lrc"
                 Log.i("catu_viewmodel", "load lrc from:${lrcPath}")
+                var lyrics = LrcParser.parseLrc("[00:00.00] 暂无歌词")
 
-                // 这里可以添加实际的歌词文件读取逻辑
-                val lyrics = LrcParser.parseLrc("[00:00.00] 暂无歌词")
+
 
                 // 在主线程中更新歌词状态
                 withContext(Dispatchers.Main) {

@@ -108,7 +108,6 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
         }
     ) { padding ->
         if (currentSong == null) {
-            // 没有歌曲播放时的状态
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -144,11 +143,10 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(32.dp),
+                    .padding(16.dp), // 减少内边距
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(32.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp) // 减少间距
             ) {
-                // 只在真正加载时显示加载状态，跳转时不显示
                 if (isLoading && !isSeeking) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -163,24 +161,33 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                         }
                     }
                 } else {
-                    // 专辑封面 - 圆角正方形
-                    AlbumCoverDisplay(
-                        currentSong = currentSong!!,
-                        isCoverLoading = isCoverLoading,
-                        modifier = Modifier.size(280.dp)
-                    )
+                    // 专辑封面区域 - 使用权重确保自适应
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AlbumCoverDisplay(
+                            currentSong = currentSong!!,
+                            isCoverLoading = isCoverLoading,
+                            modifier = Modifier
+                                .fillMaxWidth(0.7f) // 占用70%宽度
+                                .aspectRatio(1f) // 保持正方形
+                        )
+                    }
 
-                    // 歌曲信息
+                    // 歌曲信息区域
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        // 歌曲标题 - 根据长度决定是否滚动显示
+                        // 歌曲标题
                         val songTitle = currentSong!!.title
                         val shouldScroll = songTitle.length > 11
 
                         if (shouldScroll) {
-                            // 滚动显示的歌曲标题
                             Text(
                                 text = songTitle,
                                 style = MaterialTheme.typography.headlineMedium,
@@ -194,7 +201,6 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                                     )
                             )
                         } else {
-                            // 正常显示的歌曲标题
                             Text(
                                 text = songTitle,
                                 style = MaterialTheme.typography.headlineMedium,
@@ -207,10 +213,7 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                         val artistName = currentSong!!.artist
                         val shouldScrollArtist = artistName.length > 15
 
-                        Spacer(modifier = Modifier.height(8.dp))
-
                         if (shouldScrollArtist) {
-                            // 滚动显示的艺术家名称
                             Text(
                                 text = artistName,
                                 style = MaterialTheme.typography.bodyLarge,
@@ -225,7 +228,6 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                                     )
                             )
                         } else {
-                            // 正常显示的艺术家名称
                             Text(
                                 text = artistName,
                                 style = MaterialTheme.typography.bodyLarge,
@@ -239,9 +241,10 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                     // 进度条区域
                     Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        // 时间显示 - 使用 displayPosition 而不是 currentPosition
+                        // 时间显示
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
@@ -258,21 +261,17 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // 进度条 - 使用本地状态实现平滑滑动
+                        // 进度条
                         Slider(
                             value = sliderProgress,
                             onValueChange = { newProgress ->
                                 isSliderDragging = true
                                 sliderProgress = newProgress
-                                // 实时更新显示的时间（但不实际跳转）
                                 val newPosition = (currentSong!!.duration * newProgress).toLong()
-                                displayPosition = newPosition // 更新本地显示位置
+                                displayPosition = newPosition
                             },
                             onValueChangeFinished = {
                                 isSliderDragging = false
-                                // 只在拖动结束时执行实际的跳转
                                 viewModel.seekTo(sliderProgress)
                             },
                             modifier = Modifier.fillMaxWidth(),
@@ -280,10 +279,13 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                         )
                     }
 
-                    // 播放控制
+                    // 播放控制区域 - 固定高度确保可见
                     Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 80.dp), // 设置最小高度
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         // 主要控制按钮
                         Row(
@@ -296,20 +298,20 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                                 onClick = {
                                     viewModel.playPrevious(context)
                                 },
-                                modifier = Modifier.size(56.dp),
+                                modifier = Modifier.size(48.dp),
                                 enabled = viewModel.playlist.collectAsState().value.size > 1
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.SkipPrevious,
                                     contentDescription = "上一首",
-                                    modifier = Modifier.size(32.dp)
+                                    modifier = Modifier.size(28.dp)
                                 )
                             }
 
                             // 播放/暂停
                             FilledTonalButton(
                                 onClick = { viewModel.pauseOrResume() },
-                                modifier = Modifier.size(80.dp),
+                                modifier = Modifier.size(72.dp),
                                 colors = ButtonDefaults.filledTonalButtonColors(
                                     containerColor = MaterialTheme.colorScheme.primary,
                                     contentColor = MaterialTheme.colorScheme.onPrimary
@@ -318,7 +320,7 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                             ) {
                                 if (isLoading && !isSeeking) {
                                     CircularProgressIndicator(
-                                        modifier = Modifier.size(36.dp),
+                                        modifier = Modifier.size(32.dp),
                                         color = MaterialTheme.colorScheme.onPrimary,
                                         strokeWidth = 2.dp
                                     )
@@ -326,7 +328,7 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                                     Icon(
                                         imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                         contentDescription = if (isPlaying) "暂停" else "播放",
-                                        modifier = Modifier.size(36.dp)
+                                        modifier = Modifier.size(32.dp)
                                     )
                                 }
                             }
@@ -336,20 +338,20 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                                 onClick = {
                                     viewModel.playNext(context)
                                 },
-                                modifier = Modifier.size(56.dp),
+                                modifier = Modifier.size(48.dp),
                                 enabled = viewModel.playlist.collectAsState().value.size > 1
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.SkipNext,
                                     contentDescription = "下一首",
-                                    modifier = Modifier.size(32.dp)
+                                    modifier = Modifier.size(28.dp)
                                 )
                             }
                         }
                     }
                 }
 
-                // 错误消息显示
+                // 错误消息显示 - 如果有错误，会占用额外空间
                 if (errorMessage != null) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -358,7 +360,7 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                         )
                     ) {
                         Row(
-                            modifier = Modifier.padding(16.dp),
+                            modifier = Modifier.padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
@@ -366,7 +368,7 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                                 contentDescription = "错误",
                                 tint = MaterialTheme.colorScheme.error
                             )
-                            Spacer(modifier = Modifier.width(16.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = errorMessage!!,
                                 style = MaterialTheme.typography.bodyMedium,
@@ -393,15 +395,14 @@ fun AlbumCoverDisplay(
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp)) // 圆角正方形
+            .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center
     ) {
         if (currentSong.hasCover && currentSong.coverUri.isNotEmpty()) {
-            // 有专辑封面时显示图片 - 使用文件路径
             SubcomposeAsyncImage(
                 model = ImageRequest.Builder(context)
-                    .data(File(currentSong.coverUri)) // 使用 File 对象
+                    .data(File(currentSong.coverUri))
                     .crossfade(true)
                     .build(),
                 contentDescription = "专辑封面",
@@ -409,7 +410,6 @@ fun AlbumCoverDisplay(
                     .fillMaxSize()
                     .clip(RoundedCornerShape(16.dp)),
                 loading = {
-                    // 封面加载中显示进度指示器
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -418,22 +418,19 @@ fun AlbumCoverDisplay(
                     ) {
                         if (isCoverLoading) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(48.dp),
+                                modifier = Modifier.size(32.dp), // 减小加载指示器
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         } else {
-                            // 加载完成前显示默认图标
                             DefaultAlbumIcon()
                         }
                     }
                 },
                 error = {
-                    // 封面加载失败显示默认图标
                     DefaultAlbumIcon()
                 }
             )
         } else {
-            // 没有专辑封面时显示默认图标
             DefaultAlbumIcon()
         }
     }
@@ -447,7 +444,7 @@ fun DefaultAlbumIcon() {
     Icon(
         imageVector = Icons.Default.MusicNote,
         contentDescription = "专辑封面",
-        modifier = Modifier.size(120.dp), // 固定大小
+        modifier = Modifier.size(64.dp), // 减小默认图标
         tint = MaterialTheme.colorScheme.onPrimaryContainer
     )
 }
