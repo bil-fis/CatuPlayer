@@ -72,6 +72,10 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _currentLyricIndex = MutableStateFlow(-1)
     val currentLyricIndex: StateFlow<Int> = _currentLyricIndex.asStateFlow()
 
+    // 封面加载状态
+    private val _isCoverLoading = MutableStateFlow(false)
+    val isCoverLoading: StateFlow<Boolean> = _isCoverLoading.asStateFlow()
+
     // 获取音频焦点
     private var audioFocusRequest: AudioFocusRequest? = null
 
@@ -245,6 +249,33 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    // 异步加载专辑封面
+    suspend fun loadAlbumCover(song: Song) {
+        _isCoverLoading.value = true
+
+        backgroundScope.launch {
+            try {
+                // 这里可以添加网络加载封面的逻辑
+                // 目前我们只使用内嵌封面或本地封面
+
+                // 模拟网络加载延迟（用于测试）
+                delay(500)
+
+                // 在实际应用中，这里可以添加网络请求来获取专辑封面
+                // 例如：val networkCoverUri = fetchCoverFromNetwork(song)
+
+                withContext(Dispatchers.Main) {
+                    _isCoverLoading.value = false
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    _isCoverLoading.value = false
+                }
+            }
+        }
+    }
+
     private fun startProgressUpdates() {
         job?.cancel()
         job = CoroutineScope(Dispatchers.Main).launch {
@@ -310,6 +341,11 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 // 在后台加载歌词
                 backgroundScope.launch {
                     loadLyricsForSong(song)
+                }
+
+                // 在后台加载专辑封面
+                backgroundScope.launch {
+                    loadAlbumCover(song)
                 }
 
             } catch (e: Exception) {
@@ -474,7 +510,9 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     artist = musicInfo.artist,
                     duration = musicInfo.duration,
                     uri = uri.toString(),
-                    hasMetadata = musicInfo.hasMetadata
+                    hasMetadata = musicInfo.hasMetadata,
+                    coverUri = musicInfo.coverUri, // 添加封面URI
+                    hasEmbeddedCover = musicInfo.hasEmbeddedCover // 添加内嵌封面信息
                 )
             } catch (e: Exception) {
                 e.printStackTrace()

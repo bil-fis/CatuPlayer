@@ -32,9 +32,19 @@ import com.petitbear.catuplayer.utils.MusicMetadataUtils
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.collectAsState
 import com.petitbear.catuplayer.models.AudioPlayerViewModel
+import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
+import com.petitbear.catuplayer.utils.CoverImageLoader
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.ui.text.TextStyle
+import java.io.File
 
 // NowPlayingScreen.kt
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewModel) {
     val currentSong by viewModel.currentSong.collectAsState()
@@ -44,6 +54,7 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val isSeeking by viewModel.isSeeking.collectAsState()
+    val isCoverLoading by viewModel.isCoverLoading.collectAsState()
     val context = LocalContext.current
 
     // 添加本地状态来管理进度条
@@ -152,40 +163,75 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                         }
                     }
                 } else {
-                    // 专辑封面
-                    Box(
-                        modifier = Modifier
-                            .size(280.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = "专辑封面",
-                            modifier = Modifier.size(120.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
+                    // 专辑封面 - 圆角正方形
+                    AlbumCoverDisplay(
+                        currentSong = currentSong!!,
+                        isCoverLoading = isCoverLoading,
+                        modifier = Modifier.size(280.dp)
+                    )
 
                     // 歌曲信息
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = currentSong!!.title,
-                            style = MaterialTheme.typography.headlineMedium,
-                            textAlign = TextAlign.Center
-                        )
-                        Text(
-                            text = currentSong!!.artist,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                        if (currentSong!!.duration > 0) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // 歌曲标题 - 根据长度决定是否滚动显示
+                        val songTitle = currentSong!!.title
+                        val shouldScroll = songTitle.length > 11
+
+                        if (shouldScroll) {
+                            // 滚动显示的歌曲标题
                             Text(
-                                text = "时长: ${currentSong!!.formattedDuration}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = songTitle,
+                                style = MaterialTheme.typography.headlineMedium,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .basicMarquee(
+                                        iterations = Int.MAX_VALUE,
+                                        initialDelayMillis = 1000
+                                    )
+                            )
+                        } else {
+                            // 正常显示的歌曲标题
+                            Text(
+                                text = songTitle,
+                                style = MaterialTheme.typography.headlineMedium,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2
+                            )
+                        }
+
+                        // 艺术家名称
+                        val artistName = currentSong!!.artist
+                        val shouldScrollArtist = artistName.length > 15
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (shouldScrollArtist) {
+                            // 滚动显示的艺术家名称
+                            Text(
+                                text = artistName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .basicMarquee(
+                                        iterations = Int.MAX_VALUE,
+                                        initialDelayMillis = 1500
+                                    )
+                            )
+                        } else {
+                            // 正常显示的艺术家名称
+                            Text(
+                                text = artistName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1
                             )
                         }
                     }
@@ -333,6 +379,79 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
         }
     }
 }
+
+/**
+ * 专辑封面显示组件
+ */
+@Composable
+fun AlbumCoverDisplay(
+    currentSong: com.petitbear.catuplayer.models.Song,
+    isCoverLoading: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp)) // 圆角正方形
+            .background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        if (currentSong.hasCover && currentSong.coverUri.isNotEmpty()) {
+            // 有专辑封面时显示图片 - 使用文件路径
+            SubcomposeAsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(File(currentSong.coverUri)) // 使用 File 对象
+                    .crossfade(true)
+                    .build(),
+                contentDescription = "专辑封面",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(16.dp)),
+                loading = {
+                    // 封面加载中显示进度指示器
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isCoverLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(48.dp),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        } else {
+                            // 加载完成前显示默认图标
+                            DefaultAlbumIcon()
+                        }
+                    }
+                },
+                error = {
+                    // 封面加载失败显示默认图标
+                    DefaultAlbumIcon()
+                }
+            )
+        } else {
+            // 没有专辑封面时显示默认图标
+            DefaultAlbumIcon()
+        }
+    }
+}
+
+/**
+ * 默认专辑图标
+ */
+@Composable
+fun DefaultAlbumIcon() {
+    Icon(
+        imageVector = Icons.Default.MusicNote,
+        contentDescription = "专辑封面",
+        modifier = Modifier.size(120.dp), // 固定大小
+        tint = MaterialTheme.colorScheme.onPrimaryContainer
+    )
+}
+
 // 格式化时间显示 (毫秒 -> 分:秒)
 private fun formatTime(milliseconds: Long): String {
     val totalSeconds = milliseconds / 1000

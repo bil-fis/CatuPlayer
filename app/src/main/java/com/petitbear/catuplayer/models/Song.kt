@@ -4,7 +4,6 @@ import com.petitbear.catuplayer.utils.MusicMetadataUtils
 import kotlinx.serialization.Serializable
 
 // 歌曲模型类
-// Song.kt
 @Serializable
 data class Song(
     val id: String,
@@ -14,7 +13,8 @@ data class Song(
     val uri: String,
     val album: String = "",
     val hasMetadata: Boolean = false,
-    val coverUri: String = "",
+    val coverUri: String = "", // 专辑封面文件路径
+    val hasEmbeddedCover: Boolean = false, // 是否包含内嵌封面
     val lrcUri: String = ""
 
 ) {
@@ -27,4 +27,8 @@ data class Song(
     // 检查是否可以播放（有URI且URI不为空）
     val canPlay: Boolean
         get() = uri.isNotEmpty()
+
+    // 检查是否有封面（内嵌封面或外部封面）
+    val hasCover: Boolean
+        get() = coverUri.isNotEmpty()
 }

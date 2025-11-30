@@ -22,9 +22,9 @@
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
-        android:icon="@drawable/cyrene"
+        android:icon="@drawable/catu"
         android:label="@string/app_name"
-        android:roundIcon="@drawable/cyrene"
+        android:roundIcon="@drawable/catu"
         android:supportsRtl="true"
         android:theme="@style/Theme.CatuPlayer"
         android:enableOnBackInvokedCallback="true">
