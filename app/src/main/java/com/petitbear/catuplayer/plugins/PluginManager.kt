@@ -41,7 +41,8 @@ class PluginManager(
             }
 
             // 执行插件初始化脚本
-            jsContext.eval("js", """
+            jsContext.eval(
+                "js", """
                 // 创建插件命名空间
                 if (typeof plugins === 'undefined') {
                     var plugins = {};
@@ -58,7 +59,8 @@ class PluginManager(
                         cleanup: cleanup
                     };
                 })();
-            """.trimIndent())
+            """.trimIndent()
+            )
 
             pluginRegistry[plugin.id] = plugin
             Result.success(Unit)
@@ -74,13 +76,15 @@ class PluginManager(
                 val plugin = pluginRegistry[pluginId]
                     ?: return@withContext Result.failure(IllegalArgumentException("插件不存在"))
 
-                val result = jsContext.eval("js", """
+                val result = jsContext.eval(
+                    "js", """
                     if (plugins['$pluginId'] && plugins['$pluginId'].execute) {
                         plugins['$pluginId'].execute(${Gson().toJson(input)});
                     } else {
                         throw new Error('插件执行函数不存在');
                     }
-                """.trimIndent())
+                """.trimIndent()
+                )
 
                 Result.success(result)
             } catch (e: Exception) {

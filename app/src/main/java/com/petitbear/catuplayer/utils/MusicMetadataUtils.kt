@@ -1,15 +1,15 @@
 package com.petitbear.catuplayer.utils
 
-import android.media.MediaMetadataRetriever
 import android.content.Context
-import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 object MusicMetadataUtils {
     /**
@@ -90,7 +90,11 @@ object MusicMetadataUtils {
     /**
      * 将封面保存到缓存目录
      */
-    private fun saveCoverToCache(context: Context, embeddedPicture: ByteArray, uriString: String): String {
+    private fun saveCoverToCache(
+        context: Context,
+        embeddedPicture: ByteArray,
+        uriString: String
+    ): String {
         return try {
             // 创建缓存目录
             val cacheDir = File(context.getExternalFilesDir(null), "covers")
@@ -125,7 +129,9 @@ object MusicMetadataUtils {
         return if (metadata != null && metadata.isValid()) {
             // 使用元数据
             MusicInfo(
-                title = if (metadata.title.isNotEmpty()) metadata.title else fileName.substringBeforeLast("."),
+                title = if (metadata.title.isNotEmpty()) metadata.title else fileName.substringBeforeLast(
+                    "."
+                ),
                 artist = if (metadata.artist.isNotEmpty()) metadata.artist else "未知艺术家",
                 duration = metadata.duration,
                 hasMetadata = true,

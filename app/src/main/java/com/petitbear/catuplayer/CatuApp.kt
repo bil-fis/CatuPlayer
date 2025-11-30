@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -14,11 +13,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -26,9 +21,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.petitbear.catuplayer.models.AudioPlayerViewModel
 import com.petitbear.catuplayer.models.Screen
 import com.petitbear.catuplayer.ui.theme.CatuPlayerTheme
-import com.petitbear.catuplayer.models.AudioPlayerViewModel
 import com.petitbear.catuplayer.views.HomeScreen
 import com.petitbear.catuplayer.views.Meme
 import com.petitbear.catuplayer.views.NowPlayingScreen
@@ -58,7 +53,7 @@ fun CatuApp(viewModel: AudioPlayerViewModel) {
                 composable(Screen.Home.route) {
                     HomeScreen(navController, viewModel)
                 }
-                composable(Screen.SearchPage.route){
+                composable(Screen.SearchPage.route) {
                     SearchPage(navController, viewModel)
                 }
                 composable(Screen.Playlist.route) {
@@ -67,8 +62,8 @@ fun CatuApp(viewModel: AudioPlayerViewModel) {
                 composable(Screen.NowPlaying.route) {
                     NowPlayingScreen(navController, viewModel)
                 }
-                composable(Screen.Mine.route){
-                    Meme(navController,viewModel)
+                composable(Screen.Mine.route) {
+                    Meme(navController, viewModel)
                 }
             }
         }

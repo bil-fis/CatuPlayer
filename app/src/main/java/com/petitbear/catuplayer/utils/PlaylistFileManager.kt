@@ -160,22 +160,24 @@ class PlaylistFileManager(private val context: Context) {
     /**
      * 重新排序播放列表并保存
      */
-    suspend fun reorderPlaylist(fromIndex: Int, toIndex: Int): Result<Unit> = withContext(Dispatchers.IO) {
-        return@withContext try {
-            val currentList = _playlist.value.toMutableList()
+    suspend fun reorderPlaylist(fromIndex: Int, toIndex: Int): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            return@withContext try {
+                val currentList = _playlist.value.toMutableList()
 
-            if (fromIndex < 0 || fromIndex >= currentList.size ||
-                toIndex < 0 || toIndex >= currentList.size) {
-                return@withContext Result.failure(IndexOutOfBoundsException("索引超出范围"))
+                if (fromIndex < 0 || fromIndex >= currentList.size ||
+                    toIndex < 0 || toIndex >= currentList.size
+                ) {
+                    return@withContext Result.failure(IndexOutOfBoundsException("索引超出范围"))
+                }
+
+                val song = currentList.removeAt(fromIndex)
+                currentList.add(toIndex, song)
+                savePlaylist(currentList)
+            } catch (e: Exception) {
+                Result.failure(e)
             }
-
-            val song = currentList.removeAt(fromIndex)
-            currentList.add(toIndex, song)
-            savePlaylist(currentList)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
-    }
 
     /**
      * 获取播放列表大小
@@ -238,25 +240,26 @@ class PlaylistFileManager(private val context: Context) {
     /**
      * 从备份文件恢复播放列表
      */
-    suspend fun restoreFromBackup(backupFile: File): Result<List<Song>> = withContext(Dispatchers.IO) {
-        return@withContext try {
-            if (!backupFile.exists()) {
-                return@withContext Result.failure(IllegalStateException("备份文件不存在"))
+    suspend fun restoreFromBackup(backupFile: File): Result<List<Song>> =
+        withContext(Dispatchers.IO) {
+            return@withContext try {
+                if (!backupFile.exists()) {
+                    return@withContext Result.failure(IllegalStateException("备份文件不存在"))
+                }
+
+                val jsonString = backupFile.bufferedReader().use { it.readText() }
+                val songs = json.decodeFromString<List<Song>>(jsonString)
+
+                // 保存到主文件并更新状态
+                savePlaylist(songs)
+
+                Log.d("PlaylistFileManager", "播放列表已从备份恢复: ${songs.size} 首歌曲")
+                Result.success(songs)
+            } catch (e: Exception) {
+                Log.e("PlaylistFileManager", "从备份恢复播放列表失败: ${e.message}")
+                Result.failure(e)
             }
-
-            val jsonString = backupFile.bufferedReader().use { it.readText() }
-            val songs = json.decodeFromString<List<Song>>(jsonString)
-
-            // 保存到主文件并更新状态
-            savePlaylist(songs)
-
-            Log.d("PlaylistFileManager", "播放列表已从备份恢复: ${songs.size} 首歌曲")
-            Result.success(songs)
-        } catch (e: Exception) {
-            Log.e("PlaylistFileManager", "从备份恢复播放列表失败: ${e.message}")
-            Result.failure(e)
         }
-    }
 
     /**
      * 文件信息数据类

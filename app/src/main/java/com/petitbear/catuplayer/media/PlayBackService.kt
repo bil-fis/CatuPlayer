@@ -10,10 +10,8 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import com.petitbear.catuplayer.models.AudioPlayerViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 class PlayBackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
@@ -44,6 +42,7 @@ class PlayBackService : MediaSessionService() {
                     Player.STATE_READY -> {
                         // 可以在这里更新自定义布局
                     }
+
                     Player.STATE_ENDED -> {
                         // 播放结束处理
                     }
@@ -75,7 +74,8 @@ class PlayBackService : MediaSessionService() {
         }
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
+        mediaSession
 
     // 自定义 MediaSession 回调
     @UnstableApi
@@ -93,12 +93,14 @@ class PlayBackService : MediaSessionService() {
                         SessionResult(SessionResult.RESULT_SUCCESS)
                     )
                 }
+
                 CUSTOM_ACTION_NEXT -> {
                     sendPlaybackAction("next")
                     return Futures.immediateFuture(
                         SessionResult(SessionResult.RESULT_SUCCESS)
                     )
                 }
+
                 CUSTOM_ACTION_TOGGLE_PLAYBACK -> {
                     sendPlaybackAction("toggle")
                     return Futures.immediateFuture(

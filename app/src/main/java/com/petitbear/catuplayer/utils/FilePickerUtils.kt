@@ -50,7 +50,8 @@ object FilePickerUtils {
             try {
                 context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                     if (cursor.moveToFirst()) {
-                        val displayNameIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                        val displayNameIndex =
+                            cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                         if (displayNameIndex != -1) {
                             cursor.getString(displayNameIndex)
                         } else {

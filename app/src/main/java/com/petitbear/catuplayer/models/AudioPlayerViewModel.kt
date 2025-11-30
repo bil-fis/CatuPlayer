@@ -17,7 +17,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
-import androidx.media3.session.MediaSession
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -27,11 +26,9 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.petitbear.catuplayer.media.PlayBackService
-import com.petitbear.catuplayer.utils.FileReadingUtils
 import com.petitbear.catuplayer.utils.LrcLyric
 import com.petitbear.catuplayer.utils.LrcParser
 import com.petitbear.catuplayer.utils.MusicMetadataUtils
-import com.petitbear.catuplayer.utils.UriPermissionRestorer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,13 +40,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.IOException
 
 class AudioPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     // 播放器相关
-    private var exoPlayer: ExoPlayer?=null
-    private val appContext : Context
+    private var exoPlayer: ExoPlayer? = null
+    private val appContext: Context
         get() = getApplication<Application>().applicationContext
     private var job: Job? = null
 
@@ -143,9 +139,11 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             appContext.registerReceiver(playbackActionReceiver, filter)
         }
     }
+
     fun initializeMediaController() {
         try {
-            val sessionToken = SessionToken(appContext, ComponentName(appContext, PlayBackService::class.java))
+            val sessionToken =
+                SessionToken(appContext, ComponentName(appContext, PlayBackService::class.java))
 
             controllerFuture = MediaController.Builder(appContext, sessionToken).buildAsync()
 
@@ -167,18 +165,22 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                                         startProgressUpdates()
                                     }
                                 }
+
                                 Player.STATE_BUFFERING -> {
                                     _isLoading.value = true
                                 }
+
                                 Player.STATE_ENDED -> {
                                     _isPlaying.value = false
                                     stopProgressUpdates()
                                     playNext(appContext)
                                 }
+
                                 Player.STATE_IDLE -> {
                                     _isPlaying.value = false
                                     stopProgressUpdates()
                                 }
+
                                 else -> {
                                     _isLoading.value = false
                                 }
@@ -240,10 +242,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         // 长时间失去焦点，停止播放
                         _mediaController.value?.pause()
                     }
+
                     AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                         // 短暂失去焦点，暂停播放
                         _mediaController.value?.pause()
                     }
+
                     AudioManager.AUDIOFOCUS_GAIN -> {
                         // 重新获得焦点，恢复播放
                         _mediaController.value?.play()
@@ -296,7 +300,6 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 val lrcPath = song.uri.substringBeforeLast(".") + ".lrc"
                 Log.i("catu_viewmodel", "load lrc from:${lrcPath}")
                 var lyrics = LrcParser.parseLrc("[00:00.00] 暂无歌词")
-
 
 
                 // 在主线程中更新歌词状态
@@ -524,7 +527,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun setPlayList(songs:List<Song>){
+    fun setPlayList(songs: List<Song>) {
         _playlist.value = songs
     }
 
@@ -535,7 +538,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             // 在 IO 线程中处理文件解析
             val newSongs = withContext(Dispatchers.IO) {
                 files.mapNotNull { (uri, fileName) ->
-                    createSongFromUri(appContext,uri, fileName)
+                    createSongFromUri(appContext, uri, fileName)
                 }
             }
 

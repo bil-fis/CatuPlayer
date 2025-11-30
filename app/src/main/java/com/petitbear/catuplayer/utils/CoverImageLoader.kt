@@ -2,14 +2,12 @@ package com.petitbear.catuplayer.utils
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.net.Uri
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import coil.compose.rememberAsyncImagePainter
+import coil.imageLoader
+import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import coil.compose.rememberAsyncImagePainter
-import coil.request.ImageRequest
-import coil.imageLoader
-import coil.decode.BitmapFactoryDecoder
 
 /**
  * 专辑封面加载器

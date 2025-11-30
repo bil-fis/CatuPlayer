@@ -9,15 +9,15 @@ import java.io.FileNotFoundException
 import java.io.IOException
 
 object FileReadingUtils {
-    fun readFileFromAssets(context: Context, filename:String):String{
+    fun readFileFromAssets(context: Context, filename: String): String {
         return try {
-            context.assets.open(filename).bufferedReader().use{it.readText()}
-        }catch(e: IOException){
+            context.assets.open(filename).bufferedReader().use { it.readText() }
+        } catch (e: IOException) {
             "Error reading file:${e.message}"
         }
     }
 
-    fun readFileFromRaw(context: Context,@RawRes resId:Int):String{
+    fun readFileFromRaw(context: Context, @RawRes resId: Int): String {
         return try {
             context.resources.openRawResource(resId).bufferedReader().use { it.readText() }
         } catch (e: IOException) {

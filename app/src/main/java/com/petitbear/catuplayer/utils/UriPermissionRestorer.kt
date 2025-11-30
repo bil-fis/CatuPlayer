@@ -5,9 +5,9 @@ import android.content.Intent
 import android.content.UriPermission
 import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import androidx.core.net.toUri
 
 class UriPermissionRestorer(private val context: Context) {
 

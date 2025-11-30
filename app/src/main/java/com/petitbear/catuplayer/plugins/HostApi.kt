@@ -1,7 +1,6 @@
 package com.petitbear.catuplayer.plugins
 
 import android.content.Context
-import android.util.Log
 import android.widget.Toast
 import org.graalvm.polyglot.HostAccess
 import timber.log.Timber
