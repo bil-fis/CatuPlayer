@@ -656,7 +656,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // 处理来自外部的控制请求（避免递归）
+    // 处理来自外部的控制请求
     private fun handleExternalPrevious() {
         viewModelScope.launch {
             delay(50)
