@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    tags: ['build v*.*.*-*']
+    tags: ['v*.*.*-*']
   pull_request:
     branches: [ "main" ]
 
@@ -28,7 +28,7 @@ jobs:
       
     - name: Get tag version
       id: get_version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/build v}" >> $GITHUB_OUTPUT
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
       
     - name: Get current timestamp
       id: timestamp
@@ -37,7 +37,7 @@ jobs:
     - name: Rename APK file
       run: |
         mkdir -p release_files
-        cp app/build/outputs/apk/release/*.apk "release_files/CatuPlayer_v${{ steps.get_version.outputs.VERSION }}+${{ steps.timestamp.outputs.TIME }}.apk"
+        cp app/build/outputs/apk/release/*.apk "release_files/CatuPlayer_v${{ steps.get_version.outputs.VERSION }}+build${{ steps.timestamp.outputs.TIME }}.apk"
       
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
