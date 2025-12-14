@@ -1,5 +1,7 @@
 package com.petitbear.catuplayer.views
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -39,6 +42,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -108,6 +114,19 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
     // 底部抽屉状态
     val bottomSheetState = rememberModalBottomSheetState()
     var showLyricBottomSheet by remember { mutableStateOf(false) }
+
+    // 三点菜单状态
+    var showMenu by remember { mutableStateOf(false) }
+
+    // 文件选择器启动器
+    val lrcFilePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri ->
+            uri?.let {
+                handleLrcFileSelected(context, it, currentSong, viewModel, coroutineScope)
+            }
+        }
+    )
 
     // 当不是拖动状态且不是在跳转时，同步进度条位置
     LaunchedEffect(progress, isSliderDragging, isSeeking) {
@@ -187,6 +206,60 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+                },
+                actions = {
+                    // 三点菜单按钮
+                    if (currentSong != null) {
+                        Box {
+                            IconButton(
+                                onClick = { showMenu = true },
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "更多选项",
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+
+                            // 下拉菜单
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                                modifier = Modifier.width(160.dp)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("选择本地歌词") },
+                                    onClick = {
+                                        showMenu = false
+                                        // 启动文件选择器，限制为文本文件
+                                        lrcFilePickerLauncher.launch("text/*")
+                                    }
+                                )
+                                Divider()
+                                DropdownMenuItem(
+                                    text = { Text("重新下载歌词") },
+                                    onClick = {
+                                        showMenu = false
+                                        currentSong?.let { song ->
+                                            coroutineScope.launch {
+                                                // 清除现有歌词缓存
+                                                val lrcCacheFile = File(
+                                                    context.getExternalFilesDir(null),
+                                                    "lyrics/${song.id}_${song.title}.lrc"
+                                                )
+                                                if (lrcCacheFile.exists()) {
+                                                    lrcCacheFile.delete()
+                                                }
+                                                // 重新下载歌词
+                                                viewModel.loadLyricsForSong(song)
+                                            }
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 },
@@ -521,6 +594,47 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 处理用户选择的LRC歌词文件
+ */
+private fun handleLrcFileSelected(
+    context: android.content.Context,
+    uri: android.net.Uri,
+    currentSong: com.petitbear.catuplayer.models.Song?,
+    viewModel: AudioPlayerViewModel,
+    coroutineScope: kotlinx.coroutines.CoroutineScope
+) {
+    if (currentSong == null) return
+
+    coroutineScope.launch {
+        try {
+            // 读取选择的LRC文件内容
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val lrcContent = inputStream?.bufferedReader().use { it?.readText() } ?: ""
+
+            if (lrcContent.isNotEmpty()) {
+                // 创建lyrics目录（如果不存在）
+                val lyricsDir = File(context.getExternalFilesDir(null), "lyrics")
+                if (!lyricsDir.exists()) {
+                    lyricsDir.mkdirs()
+                }
+
+                // 清理文件名中的非法字符
+                val safeTitle = currentSong.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+
+                // 保存文件：歌曲id_歌曲标题.lrc
+                val lrcFile = File(lyricsDir, "${currentSong.id}_${safeTitle}.lrc")
+                lrcFile.writeText(lrcContent)
+
+                // 重新加载歌词
+                viewModel.loadLyricsForSong(currentSong)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

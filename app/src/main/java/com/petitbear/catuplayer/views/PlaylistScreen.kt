@@ -57,6 +57,7 @@ import kotlinx.coroutines.launch
 fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel) {
     val playlist by viewModel.playlist.collectAsState()
     val currentSong by viewModel.currentSong.collectAsState()
+    val currentPlaylistIndex by viewModel.currentPlaylistIndex.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val context = LocalContext.current
@@ -81,7 +82,19 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
                 )
                 Log.d("MusicPlayer", "成功恢复 $restoredCount 个URI的权限")
 
+                // 设置播放列表，这会自动同步到 MediaController
                 viewModel.setPlayList(songs)
+
+                // 如果有当前播放的歌曲，确保 UI 高亮正确
+                viewModel.currentSong.value?.let { currentSong ->
+                    val index = songs.indexOfFirst { it.id == currentSong.id }
+                    if (index >= 0) {
+                        // 更新播放器中的位置
+                        coroutineScope.launch {
+                            viewModel.playSong(currentSong)
+                        }
+                    }
+                }
             },
             onFailure = { error ->
                 Log.e("MusicPlayer", "播放列表加载失败: ${error.message}")
@@ -100,7 +113,7 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("播放列表") },
+                title = { Text("播放列表 (${playlist.size})") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     titleContentColor = MaterialTheme.colorScheme.onSurface
@@ -180,7 +193,9 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
                     .padding(padding)
             ) {
                 items(playlist) { song ->
-                    val isCurrentSong = currentSong?.id == song.id
+                    // 使用 currentPlaylistIndex 来判断当前播放的歌曲
+                    val isCurrentSong = song.id == currentSong?.id ||
+                            playlist.indexOf(song) == currentPlaylistIndex
 
                     Card(
                         onClick = {
@@ -214,11 +229,15 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
                             modifier = Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // 歌曲序号
+                            // 歌曲序号 - 高亮当前播放歌曲
                             Text(
                                 text = "${playlist.indexOf(song) + 1}",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (isCurrentSong) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                                 modifier = Modifier.width(32.dp)
                             )
 

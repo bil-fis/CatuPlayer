@@ -52,6 +52,10 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         get() = getApplication<Application>().applicationContext
     private var job: Job? = null
 
+    // playlist
+    private val _currentPlaylistIndex = MutableStateFlow(-1)
+    val currentPlaylistIndex: StateFlow<Int> = _currentPlaylistIndex.asStateFlow()
+
     // media session
     private val _mediaController = MutableLiveData<MediaController?>()
     val mediaController: LiveData<MediaController?> = _mediaController
@@ -167,6 +171,8 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                                     if (controller.isPlaying) {
                                         startProgressUpdates()
                                     }
+                                    // 更新当前播放索引
+                                    updateCurrentPlaylistIndex()
                                 }
 
                                 Player.STATE_BUFFERING -> {
@@ -176,7 +182,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                                 Player.STATE_ENDED -> {
                                     _isPlaying.value = false
                                     stopProgressUpdates()
-                                    playNext(appContext)
+                                    playNext()
                                 }
 
                                 Player.STATE_IDLE -> {
@@ -205,17 +211,52 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                             stopProgressUpdates()
                         }
 
-                        // 添加位置变化监听，确保进度同步
+                        // 监听媒体项切换
+                        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                            mediaItem?.let { item ->
+                                // 找到对应的歌曲
+                                val song = _playlist.value.find { it.id == item.mediaId }
+                                song?.let {
+                                    // 更新当前歌曲
+                                    if (_currentSong.value?.id != it.id) {
+                                        _currentSong.value = it
+                                        // 更新当前播放索引
+                                        updateCurrentPlaylistIndex()
+                                        // 加载歌词和封面
+                                        viewModelScope.launch {
+                                            loadLyricsForSong(it)
+                                            loadAlbumCover(it)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 监听位置变化，用于系统控制中心切歌时同步
                         override fun onPositionDiscontinuity(
                             oldPosition: Player.PositionInfo,
                             newPosition: Player.PositionInfo,
                             reason: Int
                         ) {
-                            updateProgress()
+                            // 如果是媒体项切换（如切歌）
+                            if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION ||
+                                reason == Player.DISCONTINUITY_REASON_SEEK
+                            ) {
+                                updateCurrentPlaylistIndex()
+                                updateProgress()
+                            }
                         }
                     })
 
                     Log.d("PlayerViewModel", "MediaController初始化成功")
+
+                    // 初始化完成后，同步现有的播放列表
+                    if (_playlist.value.isNotEmpty()) {
+                        viewModelScope.launch {
+                            updateMediaControllerPlaylist(_playlist.value)
+                        }
+                    }
+
                 } catch (e: Exception) {
                     Log.e("PlayerViewModel", "MediaController创建失败", e)
                     _mediaController.postValue(null)
@@ -225,6 +266,21 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         } catch (e: Exception) {
             Log.e("PlayerViewModel", "SessionToken创建失败", e)
             _isMediaControllerReady.value = false
+        }
+    }
+
+    // 更新当前播放索引
+    private fun updateCurrentPlaylistIndex() {
+        _mediaController.value?.let { player ->
+            val currentMediaId = player.currentMediaItem?.mediaId
+            if (currentMediaId != null) {
+                val index = _playlist.value.indexOfFirst { it.id == currentMediaId }
+                if (index != _currentPlaylistIndex.value) {
+                    _currentPlaylistIndex.value = index
+                }
+            } else {
+                _currentPlaylistIndex.value = -1
+            }
         }
     }
 
@@ -415,47 +471,36 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         _mediaController.value?.let { player ->
             try {
-                // 先停止当前的进度更新
-                stopProgressUpdates()
+                // 找到歌曲在播放列表中的索引
+                val index = _playlist.value.indexOfFirst { it.id == song.id }
+                if (index >= 0) {
+                    // 跳转到对应的媒体项
+                    player.seekTo(index, 0)
+                    player.play()
 
-                // 检查是否正在播放同一首歌曲
-                if (_currentSong.value?.id == song.id) {
-                    if (!player.isPlaying) {
-                        player.play()
-                        _isPlaying.value = true
-                        startProgressUpdates()
+                    // 更新当前歌曲
+                    _currentSong.value = song
+                    _currentPlaylistIndex.value = index
+
+                    // 确保播放状态正确更新
+                    _isPlaying.value = true
+
+                    // 启动进度更新
+                    startProgressUpdates()
+
+                    // 在后台加载歌词和封面
+                    if (!fromExternal) {
+                        viewModelScope.launch {
+                            loadLyricsForSong(song)
+                            loadAlbumCover(song)
+                        }
                     }
-                    _isLoading.value = false
-                    return
+                } else {
+                    // 如果歌曲不在播放列表中，先添加到播放列表
+                    addSongToPlaylist(song)
+                    // 重新播放
+                    playSong(song, fromExternal)
                 }
-
-                // 设置新歌曲信息
-                _currentSong.value = song
-
-                // 重置进度
-                _progress.value = 0f
-                _currentPosition.value = 0L
-
-                // 设置媒体项并准备播放
-                val mediaItem = MediaItem.fromUri(song.uri)
-                player.setMediaItem(mediaItem)
-                player.prepare()
-                player.play()
-
-                // 确保播放状态正确更新
-                _isPlaying.value = true
-
-                // 启动进度更新
-                startProgressUpdates()
-
-                // 在后台加载歌词和封面
-                if (!fromExternal) {
-                    viewModelScope.launch {
-                        loadLyricsForSong(song)
-                        loadAlbumCover(song)
-                    }
-                }
-
             } catch (e: Exception) {
                 _errorMessage.value = "无法播放音乐文件: ${e.message}"
                 _isLoading.value = false
@@ -517,14 +562,13 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun playNext() {
-        val current = _currentSong.value
+        val currentIndex = _currentPlaylistIndex.value
         val list = _playlist.value
-        if (current != null && list.isNotEmpty()) {
-            val currentIndex = list.indexOfFirst { it.id == current.id }
+
+        if (currentIndex >= 0 && list.isNotEmpty()) {
             val nextIndex = (currentIndex + 1) % list.size
-            // 添加延迟以避免频繁切换
             viewModelScope.launch {
-                delay(50) // 给系统一些时间清理
+                delay(50)
                 playSong(list[nextIndex])
             }
         } else if (list.isNotEmpty()) {
@@ -536,10 +580,10 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun playPrevious() {
-        val current = _currentSong.value
+        val currentIndex = _currentPlaylistIndex.value
         val list = _playlist.value
-        if (current != null && list.isNotEmpty()) {
-            val currentIndex = list.indexOfFirst { it.id == current.id }
+
+        if (currentIndex >= 0 && list.isNotEmpty()) {
             val prevIndex = if (currentIndex - 1 < 0) list.size - 1 else currentIndex - 1
             viewModelScope.launch {
                 delay(50)
@@ -563,11 +607,58 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (currentList.none { it.id == song.id }) {
             currentList.add(song)
             _playlist.value = currentList
+
+            // 异步更新 MediaController 的播放列表
+            viewModelScope.launch {
+                updateMediaControllerPlaylist(currentList)
+            }
+        }
+    }
+
+    // 更新 MediaController 的播放列表
+    private suspend fun updateMediaControllerPlaylist(songs: List<Song>) {
+        withContext(Dispatchers.Main) {
+            _mediaController.value?.let { player ->
+                // 将歌曲列表转换为 MediaItem 列表
+                val mediaItems = songs.map { song ->
+                    MediaItem.Builder()
+                        .setUri(song.uri)
+                        .setMediaId(song.id)
+                        .setMediaMetadata(
+                            androidx.media3.common.MediaMetadata.Builder()
+                                .setTitle(song.title)
+                                .setArtist(song.artist)
+                                .setAlbumTitle("")
+                                .setArtworkUri(Uri.parse(song.coverUri))
+                                .build()
+                        )
+                        .build()
+                }
+
+                // 设置播放列表并保持当前播放位置
+                val currentMediaId = player.currentMediaItem?.mediaId
+                val currentIndex = if (currentMediaId != null) {
+                    songs.indexOfFirst { it.id == currentMediaId }
+                } else -1
+
+                // 设置新的播放列表
+                player.setMediaItems(mediaItems)
+
+                // 如果之前有正在播放的歌曲，跳转到相应位置
+                if (currentIndex >= 0 && currentIndex < songs.size) {
+                    player.seekTo(currentIndex, 0)
+                }
+            }
         }
     }
 
     fun setPlayList(songs: List<Song>) {
         _playlist.value = songs
+
+        // 异步更新 MediaController 的播放列表
+        viewModelScope.launch {
+            updateMediaControllerPlaylist(songs)
+        }
     }
 
     suspend fun addSongsToPlaylist(context: Context, files: List<Pair<Uri, String>>) {
@@ -591,6 +682,11 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 if (uniqueNewSongs.isNotEmpty()) {
                     currentList.addAll(uniqueNewSongs)
                     _playlist.value = currentList
+
+                    // 异步更新 MediaController 的播放列表
+                    viewModelScope.launch {
+                        updateMediaControllerPlaylist(currentList)
+                    }
                 }
             }
 
