@@ -90,9 +90,9 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
                     val index = songs.indexOfFirst { it.id == currentSong.id }
                     if (index >= 0) {
                         // 更新播放器中的位置
-                        coroutineScope.launch {
-                            viewModel.playSong(currentSong)
-                        }
+//                        coroutineScope.launch {
+//                            viewModel.playSong(currentSong)
+//                        }
                     }
                 }
             },
