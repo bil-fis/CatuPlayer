@@ -28,10 +28,12 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.petitbear.catuplayer.media.PlayBackService
 import com.petitbear.catuplayer.utils.LrcLyric
 import com.petitbear.catuplayer.utils.LrcParser
+import com.petitbear.catuplayer.utils.LyricDownloader
 import com.petitbear.catuplayer.utils.MusicMetadataUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +42,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class AudioPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -277,16 +280,13 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     // 更新当前歌词索引
     fun updateCurrentLyric(currentPosition: Long) {
         val lyrics = _currentLyrics.value
-        if (lyrics.isEmpty()) return
-
-        var newIndex = -1
-        for (i in lyrics.indices) {
-            if (currentPosition >= lyrics[i].time) {
-                newIndex = i
-            } else {
-                break
-            }
+        if (lyrics.isEmpty()) {
+            _currentLyricIndex.value = -1
+            return
         }
+
+        // 使用 LrcParser 的正确函数计算当前歌词索引
+        val newIndex = LrcParser.getCurrentLyricIndex(lyrics, currentPosition)
 
         if (newIndex != _currentLyricIndex.value) {
             _currentLyricIndex.value = newIndex
@@ -297,14 +297,48 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     suspend fun loadLyricsForSong(song: Song) {
         backgroundScope.launch {
             try {
-                val lrcPath = song.uri.substringBeforeLast(".") + ".lrc"
-                Log.i("catu_viewmodel", "load lrc from:${lrcPath}")
-                var lyrics = LrcParser.parseLrc("[00:00.00] 暂无歌词")
-
-
+                Log.i("Lyrics","开始获取歌词 ${song.title}")
+                // 检查是否有缓存的lrc
+                val lrcCachedPath = File(appContext.getExternalFilesDir(null), "lyrics/${song.id}_${song.title}.lrc")
+                var lyrics = "[00:00.00] 暂无歌词"
+                if(lrcCachedPath.exists()){
+                    // 尝试读取
+                    val content = lrcCachedPath.readText()
+                    if (content.isNotEmpty()){
+                        lyrics = content
+                        Log.i("Lyrics","从本地缓存读取了歌词")
+                    }
+                }else{
+                    Log.i("Lyrics","尝试从网络获取")
+                    // 从网络获取
+                    val rootPath = File(appContext.getExternalFilesDir(null), "lyrics")
+                    if(!rootPath.exists()){
+                        rootPath.mkdirs()
+                    }
+                    val lyricDeferred = async {
+                        LyricDownloader.autoGetLyricFromNetwork(
+                            appContext,
+                            "${song.title} ${song.artist}"
+                        )
+                    }
+                    val result = try {
+                        lyricDeferred.await() // 这里会等待网络请求完成
+                    } catch (e: Exception) {
+                        Log.e("Lyrics", "网络获取歌词失败", e)
+                        ""
+                    }
+                    if(result.isNotEmpty()){
+                        lyrics = result
+                        lrcCachedPath.writeText(result)
+                        Log.i("Lyrics","成功从网络获取了歌词 \n $lyrics")
+                    }
+                }
+                if(lyrics == "[00:00.00] 暂无歌词"){
+                    Log.i("Lyrics","歌词获取失败")
+                }
                 // 在主线程中更新歌词状态
                 withContext(Dispatchers.Main) {
-                    _currentLyrics.value = lyrics
+                    _currentLyrics.value = LrcParser.parseLrc(lyrics)
                     _currentLyricIndex.value = -1
                 }
             } catch (e: Exception) {
@@ -350,7 +384,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         job = viewModelScope.launch {
             while (isActive) {
                 updateProgress()
-                delay(1000) // 每秒更新一次
+
+                // 更新当前歌词索引
+                val currentPos = _currentPosition.value
+                updateCurrentLyric(currentPos)
+
+                delay(500) // 每500ms更新一次
             }
         }
     }

@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
@@ -45,6 +46,7 @@ import com.petitbear.catuplayer.models.AudioPlayerViewModel
 import com.petitbear.catuplayer.models.Screen
 import com.petitbear.catuplayer.models.Song
 import com.petitbear.catuplayer.utils.LrcLyric
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,8 +59,9 @@ fun HomeScreen(navController: NavController, viewModel: AudioPlayerViewModel) {
     val currentLyricIndex by viewModel.currentLyricIndex.collectAsState()
 
     LaunchedEffect(currentPosition, isPlaying) {
-        if (isPlaying) {
+        while (isPlaying) {
             viewModel.updateCurrentLyric(currentPosition)
+            delay(500)
         }
     }
 
@@ -262,13 +265,25 @@ fun LyricDisplay(
 ) {
     val scrollState = rememberLazyListState()
 
-    // 自动滚动到当前歌词
+    // 自动滚动到当前歌词 - 仅在当前歌词变化时滚动
     LaunchedEffect(currentIndex) {
-        if (currentIndex >= 0) {
-            scrollState.animateScrollToItem(
-                index = currentIndex,
-                scrollOffset = 0
-            )
+        if (currentIndex >= 0 && currentIndex < lyrics.size) {
+            try {
+                // 延迟一点确保布局已经完成
+                delay(50)
+
+                // 滚动到当前歌词位置，并使其在中间
+                scrollState.animateScrollToItem(
+                    index = currentIndex,
+                    scrollOffset = -100
+                )
+            } catch (e: Exception) {
+                // 如果动画失败，使用普通滚动
+                scrollState.scrollToItem(
+                    index = currentIndex,
+                    scrollOffset = -100
+                )
+            }
         }
     }
 
@@ -276,30 +291,47 @@ fun LyricDisplay(
         state = scrollState,
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp) // 增加间距
     ) {
         itemsIndexed(lyrics) { index, lyric ->
             val isCurrent = index == currentIndex
+            val isPast = index < currentIndex
+            val isFuture = index > currentIndex
 
-            Text(
-                text = lyric.text,
-                style = if (isCurrent) {
-                    MaterialTheme.typography.bodyLarge.copy(
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                } else {
-                    MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 2.dp)
-            )
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                        else androidx.compose.ui.graphics.Color.Transparent
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = lyric.text,
+                    style = if (isCurrent) {
+                        MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else if (isPast) {
+                        MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    } else {
+                        MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        )
+                    },
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }

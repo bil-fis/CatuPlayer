@@ -15,7 +15,10 @@ data class Song(
     val hasMetadata: Boolean = false,
     val coverUri: String = "", // 专辑封面文件路径
     val hasEmbeddedCover: Boolean = false, // 是否包含内嵌封面
-    val lrcUri: String = ""
+    val lrcCachePath: String = "", // 歌词缓存路径
+    val hasEmbeddedLyric: Boolean = false, // 是否包含内嵌歌词
+    val lyricDownloadUrl: String = "", // 网络歌词下载URL（可选）
+    val lyricSource: String = "", // 歌词来源：embedded, local, network, none
 
 ) {
     val formattedDuration: String
@@ -31,4 +34,8 @@ data class Song(
     // 检查是否有封面（内嵌封面或外部封面）
     val hasCover: Boolean
         get() = coverUri.isNotEmpty()
+
+    // 检查是否有歌词（缓存或内嵌）
+    val hasLyric: Boolean
+        get() = lrcCachePath.isNotEmpty() || hasEmbeddedLyric || lyricSource.isNotEmpty()
 }

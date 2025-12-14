@@ -129,9 +129,9 @@ object MusicMetadataUtils {
         return if (metadata != null && metadata.isValid()) {
             // 使用元数据
             MusicInfo(
-                title = if (metadata.title.isNotEmpty()) metadata.title else fileName.substringBeforeLast(
+                title = if (metadata.title.isNotEmpty()&&!metadata.title.startsWith("msf:")) metadata.title else fileName.substringBeforeLast(
                     "."
-                ),
+                ).substringAfterLast("/"),
                 artist = if (metadata.artist.isNotEmpty()) metadata.artist else "未知艺术家",
                 duration = metadata.duration,
                 hasMetadata = true,
