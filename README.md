@@ -9,6 +9,17 @@
 
 </div>
 
+```
+注意！为了完整编译项目，你需要自己配置app/src/main/java/com/petitbear/catuplayer/ConstantVariables.kt
+在这个文件中，你需要 
+public const val SEARCH_URL
+public const val LYRIC_URL
+如果你的api逻辑和本程序的api不符（由于某些原因，我们无法展示api）
+请修改
+app/src/main/java/com/petitbear/catuplayer/models/NetSong.kt 以及
+app/src/main/java/com/petitbear/catuplayer/utils/LyricDownloader.kt
+```
+
 ## 🎵 项目简介
 
 CatuPlayer 是一款现代化的 Android 音乐播放器应用，采用 Jetpack Compose 构建，提供流畅的用户体验和丰富的音乐播放功能。该应用支持多种音频格式，具备播放列表管理、歌词显示、专辑封面识别等特性。
