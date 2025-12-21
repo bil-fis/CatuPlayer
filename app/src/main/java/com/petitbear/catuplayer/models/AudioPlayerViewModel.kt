@@ -155,6 +155,10 @@ class AudioPlayerViewModel(
     private var _isSeeking = MutableStateFlow(false)
     val isSeeking: StateFlow<Boolean> = _isSeeking.asStateFlow()
 
+    // 播放模式相关
+    private val _playMode = MutableStateFlow(PlayMode.SEQUENTIAL)
+    val playMode: StateFlow<PlayMode> = _playMode.asStateFlow()
+
     private val repository = SongRepository(database.songDao())
     private val TAG = "AudioPlayerViewModel"
 
@@ -1157,4 +1161,14 @@ class AudioPlayerViewModel(
         updateProgress()
     }
 
+    // 切换播放模式
+    fun togglePlayMode() {
+        _playMode.value = when (_playMode.value) {
+            PlayMode.SEQUENTIAL -> PlayMode.SINGLE_LOOP
+            PlayMode.SINGLE_LOOP -> PlayMode.RANDOM
+            PlayMode.RANDOM -> PlayMode.SEQUENTIAL
+        }
+    }
+
 }
+

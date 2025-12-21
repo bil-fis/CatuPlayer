@@ -31,10 +31,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Button
@@ -98,6 +103,7 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
     val errorMessage by viewModel.errorMessage.collectAsState()
     val isSeeking by viewModel.isSeeking.collectAsState()
     val isCoverLoading by viewModel.isCoverLoading.collectAsState()
+    val playMode by viewModel.playMode.collectAsState()
 
     // 歌词相关状态
     val currentLyrics by viewModel.currentLyrics.collectAsState()
@@ -509,6 +515,26 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // 播放模式切换按钮
+                            IconButton(
+                                onClick = {
+                                    // 暂不实现具体切换功能，预留接口
+                                },
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                val modeIcon = when (playMode) {
+                                    com.petitbear.catuplayer.models.PlayMode.SEQUENTIAL -> Icons.Default.Repeat
+                                    com.petitbear.catuplayer.models.PlayMode.SINGLE_LOOP -> Icons.Default.RepeatOne
+                                    com.petitbear.catuplayer.models.PlayMode.RANDOM -> Icons.Default.Shuffle
+                                }
+                                Icon(
+                                    imageVector = modeIcon,
+                                    contentDescription = "播放模式",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
                             // 上一首
                             IconButton(
                                 onClick = {
@@ -561,6 +587,25 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                                     imageVector = Icons.Default.SkipNext,
                                     contentDescription = "下一首",
                                     modifier = Modifier.size(28.dp)
+                                )
+                            }
+
+                            // 红心收藏按钮
+                            IconButton(
+                                onClick = {
+                                    currentSong?.let { song ->
+                                        coroutineScope.launch {
+                                            viewModel.toggleFavorite(song.id, !song.isFavorite)
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (currentSong?.isFavorite == true) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = if (currentSong?.isFavorite == true) "取消收藏" else "收藏",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = if (currentSong?.isFavorite == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
