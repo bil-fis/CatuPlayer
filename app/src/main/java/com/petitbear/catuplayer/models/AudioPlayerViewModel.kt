@@ -771,6 +771,10 @@ class AudioPlayerViewModel(
     suspend fun toggleFavorite(songId: String, isFavorite: Boolean) {
         try {
             songRepository.toggleFavorite(songId, isFavorite)
+            // 更新当前歌曲的收藏状态
+            if (_currentSong.value?.id == songId) {
+                _currentSong.value = _currentSong.value?.copy(isFavorite = isFavorite)
+            }
         } catch (e: Exception) {
             Log.e("PlayerViewModel", "切换收藏状态失败", e)
         }

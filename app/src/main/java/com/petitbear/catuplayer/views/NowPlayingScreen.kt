@@ -518,7 +518,7 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                             // 播放模式切换按钮
                             IconButton(
                                 onClick = {
-                                    // 暂不实现具体切换功能，预留接口
+                                    viewModel.togglePlayMode()
                                 },
                                 modifier = Modifier.size(40.dp)
                             ) {
