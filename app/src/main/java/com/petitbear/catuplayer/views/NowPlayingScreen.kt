@@ -240,8 +240,8 @@ fun NowPlayingScreen(navController: NavController, viewModel: AudioPlayerViewMod
                                     text = { Text("选择本地歌词") },
                                     onClick = {
                                         showMenu = false
-                                        // 启动文件选择器，限制为文本文件
-                                        lrcFilePickerLauncher.launch("text/*")
+                                        // 启动文件选择器，支持LRC文件和文本文件
+                                        lrcFilePickerLauncher.launch("*/*")
                                     }
                                 )
                                 Divider()
@@ -657,6 +657,15 @@ private fun handleLrcFileSelected(
 
     coroutineScope.launch {
         try {
+            // 检查文件扩展名
+            val fileName = getFileName(context, uri) ?: "unknown.lrc"
+            val fileExtension = fileName.substringAfterLast(".", "").lowercase()
+            
+            // 只处理LRC文件或文本文件
+            if (fileExtension != "lrc" && fileExtension != "txt") {
+                return@launch
+            }
+
             // 读取选择的LRC文件内容
             val inputStream = context.contentResolver.openInputStream(uri)
             val lrcContent = inputStream?.bufferedReader().use { it?.readText() } ?: ""
@@ -681,6 +690,23 @@ private fun handleLrcFileSelected(
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+}
+
+/**
+ * 获取文件名
+ */
+private fun getFileName(context: android.content.Context, uri: android.net.Uri): String? {
+    return try {
+        // 尝试从ContentResolver获取文件名
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            cursor.moveToFirst()
+            cursor.getString(nameIndex)
+        }
+    } catch (e: Exception) {
+        // 如果失败，尝试从URI路径获取
+        uri.path?.substringAfterLast("/")
     }
 }
 

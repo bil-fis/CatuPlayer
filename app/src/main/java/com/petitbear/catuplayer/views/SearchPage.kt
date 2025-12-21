@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -404,9 +405,10 @@ fun SearchResultCard(
                     .clip(CircleShape)
                     .background(
                         when {
-                            result.score >= 80 -> MaterialTheme.colorScheme.primary
-                            result.score >= 60 -> MaterialTheme.colorScheme.secondary
-                            else -> MaterialTheme.colorScheme.tertiary
+                            result.score >= 60 -> MaterialTheme.colorScheme.primary
+                            result.score >= 40 -> MaterialTheme.colorScheme.secondary
+                            result.score >= 20 -> MaterialTheme.colorScheme.tertiary
+                            else -> MaterialTheme.colorScheme.surfaceVariant
                         }
                     ),
                 contentAlignment = Alignment.Center
