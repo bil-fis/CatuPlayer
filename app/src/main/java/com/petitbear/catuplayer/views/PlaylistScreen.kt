@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicOff
 import androidx.compose.material.icons.filled.PlayArrow
@@ -42,19 +43,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.paging.LoadState
 import com.petitbear.catuplayer.models.AudioPlayerViewModel
 import com.petitbear.catuplayer.models.Screen
 import com.petitbear.catuplayer.utils.PlaylistFileManager
 import com.petitbear.catuplayer.utils.UriPermissionRestorer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.LazyPagingItems
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel) {
+fun PlaylistScreen(
+    navController: NavController,
+    viewModel: AudioPlayerViewModel
+) {
     val playlist by viewModel.playlist.collectAsState()
     val currentSong by viewModel.currentSong.collectAsState()
     val currentPlaylistIndex by viewModel.currentPlaylistIndex.collectAsState()
@@ -63,43 +71,26 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // 播放列表管理器
-    val playlistManager = PlaylistFileManager(context)
+    // 使用分页数据
+    val pagingItems = viewModel.songsPaged.collectAsLazyPagingItems()
+
     // 权限恢复
     val permissionRestorer = UriPermissionRestorer(context)
 
     var showFilePickerDialog by remember { mutableStateOf(false) }
+    var isInitialLoad by remember { mutableStateOf(true) }
 
-    // 在启动时加载播放列表并恢复权限
-    LaunchedEffect(Unit) {
-        playlistManager.loadPlaylist().fold(
-            onSuccess = { songs ->
-                Log.d("MusicPlayer", "播放列表加载成功: ${songs.size} 首歌曲")
+    // 在启动时加载数据库中的播放列表
+    LaunchedEffect(isInitialLoad) {
+        if (isInitialLoad) {
+            // 恢复URI权限
+            val restoredCount = permissionRestorer.restoreUriPermissions(
+                playlist.map { it.uri }
+            )
+            Log.d("MusicPlayer", "成功恢复 $restoredCount 个URI的权限")
 
-                // 恢复所有歌曲的URI权限
-                val restoredCount = permissionRestorer.restoreUriPermissions(
-                    songs.map { it.uri }
-                )
-                Log.d("MusicPlayer", "成功恢复 $restoredCount 个URI的权限")
-
-                // 设置播放列表，这会自动同步到 MediaController
-                viewModel.setPlayList(songs)
-
-                // 如果有当前播放的歌曲，确保 UI 高亮正确
-                viewModel.currentSong.value?.let { currentSong ->
-                    val index = songs.indexOfFirst { it.id == currentSong.id }
-                    if (index >= 0) {
-                        // 更新播放器中的位置
-//                        coroutineScope.launch {
-//                            viewModel.playSong(currentSong)
-//                        }
-                    }
-                }
-            },
-            onFailure = { error ->
-                Log.e("MusicPlayer", "播放列表加载失败: ${error.message}")
-            }
-        )
+            isInitialLoad = false
+        }
     }
 
     // 显示错误消息
@@ -113,7 +104,9 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("播放列表 (${playlist.size})") },
+                title = {
+                    Text("播放列表 (${pagingItems.itemCount.coerceAtLeast(0)})")
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     titleContentColor = MaterialTheme.colorScheme.onSurface
@@ -137,13 +130,12 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
                 onFilesSelected = { files ->
                     coroutineScope.launch {
                         viewModel.addSongsToPlaylist(context, files)
-                        playlistManager.savePlaylist(viewModel.playlist.value)
                     }
                 }
             )
         }
 
-        if (isLoading) {
+        if (isLoading && pagingItems.itemCount == 0) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -158,7 +150,7 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
                     Text("正在处理音乐文件...")
                 }
             }
-        } else if (playlist.isEmpty()) {
+        } else if (pagingItems.itemCount == 0) {
             // 空状态
             Column(
                 modifier = Modifier
@@ -192,106 +184,151 @@ fun PlaylistScreen(navController: NavController, viewModel: AudioPlayerViewModel
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                items(playlist) { song ->
-                    // 使用 currentPlaylistIndex 来判断当前播放的歌曲
-                    val isCurrentSong = song.id == currentSong?.id ||
-                            playlist.indexOf(song) == currentPlaylistIndex
+                items(
+                    count = pagingItems.itemCount,
+                    key = { index ->
+                        pagingItems.peek(index)?.id ?: index
+                    }
+                ) { index ->
+                    val song = pagingItems[index]
+                    song?.let {
+                        // 判断是否是当前播放的歌曲
+                        val isCurrentSong = song.id == currentSong?.id ||
+                                playlist.indexOfFirst { it.id == song.id } == currentPlaylistIndex
 
-                    Card(
-                        onClick = {
-                            if (song.canPlay) {
-                                viewModel.playSong(song)
-                                navController.navigate(Screen.NowPlaying.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
+                        Card(
+                            onClick = {
+                                if (song.canPlay) {
+                                    viewModel.playSong(song)
+                                    navController.navigate(Screen.NowPlaying.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
                                 }
-                            } else {
-                                // 显示无法播放的提示
-                                // 在实际应用中可以使用Snackbar
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isCurrentSong) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surface
-                            }
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // 歌曲序号 - 高亮当前播放歌曲
-                            Text(
-                                text = "${playlist.indexOf(song) + 1}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (isCurrentSong) {
-                                    MaterialTheme.colorScheme.primary
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isCurrentSong) {
+                                    MaterialTheme.colorScheme.primaryContainer
                                 } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                modifier = Modifier.width(32.dp)
-                            )
-
-                            Column(
-                                modifier = Modifier.weight(1f)
+                                    MaterialTheme.colorScheme.surface
+                                }
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
+                                // 歌曲序号
                                 Text(
-                                    text = song.title,
-                                    style = MaterialTheme.typography.titleMedium,
+                                    text = "${index + 1}",
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = if (isCurrentSong) {
                                         MaterialTheme.colorScheme.primary
                                     } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    }
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    modifier = Modifier.width(32.dp)
                                 )
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+
+                                Column(
+                                    modifier = Modifier.weight(1f)
                                 ) {
                                     Text(
-                                        text = song.artist,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        text = song.title,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = if (isCurrentSong) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                    if (song.hasMetadata) {
-                                        Icon(
-                                            imageVector = Icons.Default.Info,
-                                            contentDescription = "有元数据",
-                                            modifier = Modifier.size(12.dp),
-                                            tint = MaterialTheme.colorScheme.primary
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = song.artist,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
+                                        if (song.hasMetadata) {
+                                            Icon(
+                                                imageVector = Icons.Default.Info,
+                                                contentDescription = "有元数据",
+                                                modifier = Modifier.size(12.dp),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                        if (song.isFavorite) {
+                                            Icon(
+                                                imageVector = Icons.Default.Favorite,
+                                                contentDescription = "已收藏",
+                                                modifier = Modifier.size(12.dp),
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
                                     }
                                 }
-                            }
 
-                            // 显示歌曲时长
-                            Text(
-                                text = song.formattedDuration,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 8.dp)
-                            )
-
-                            if (isCurrentSong) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = "正在播放",
-                                    tint = MaterialTheme.colorScheme.primary
+                                // 显示歌曲时长
+                                Text(
+                                    text = song.formattedDuration,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
                                 )
-                            } else if (!song.canPlay) {
-                                Icon(
-                                    imageVector = Icons.Default.Warning,
-                                    contentDescription = "无法播放",
-                                    tint = MaterialTheme.colorScheme.error
+
+                                if (isCurrentSong) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "正在播放",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                } else if (!song.canPlay) {
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = "无法播放",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 显示加载状态
+                item {
+                    when {
+                        pagingItems.loadState.append is LoadState.Loading -> {
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                            }
+                        }
+
+                        pagingItems.loadState.append is LoadState.Error -> {
+                            val errorState = pagingItems.loadState.append as LoadState.Error
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "加载失败: ${errorState.error.message}",
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(16.dp)
                                 )
                             }
                         }

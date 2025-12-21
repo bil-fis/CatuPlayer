@@ -24,18 +24,24 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import androidx.paging.PagingData
 import com.google.common.util.concurrent.ListenableFuture
+import com.petitbear.catuplayer.data.AppDatabase
+import com.petitbear.catuplayer.data.SongRepository
 import com.petitbear.catuplayer.media.PlayBackService
 import com.petitbear.catuplayer.utils.LrcLyric
 import com.petitbear.catuplayer.utils.LrcParser
 import com.petitbear.catuplayer.utils.LyricDownloader
 import com.petitbear.catuplayer.utils.MusicMetadataUtils
+import com.petitbear.catuplayer.utils.SearchHistoryManager
+import com.petitbear.catuplayer.utils.SearchManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,7 +50,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class AudioPlayerViewModel(application: Application) : AndroidViewModel(application) {
+class AudioPlayerViewModel(
+    application: Application,
+    private val songRepository: SongRepository
+) : AndroidViewModel(application) {
 
     // 播放器相关
     private var exoPlayer: ExoPlayer? = null
@@ -53,8 +62,19 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var job: Job? = null
 
     // playlist
+    // 添加数据库相关字段
+    private val database = AppDatabase.getInstance(application)
+    // 分页数据流
+    val songsPaged: Flow<PagingData<Song>> = songRepository.getSongsPaged()
     private val _currentPlaylistIndex = MutableStateFlow(-1)
     val currentPlaylistIndex: StateFlow<Int> = _currentPlaylistIndex.asStateFlow()
+    // 当前播放列表（内存中的子集）
+    private val _currentPlaylist = MutableStateFlow<List<Song>>(emptyList())
+    val currentPlaylist: StateFlow<List<Song>> = _currentPlaylist.asStateFlow()
+
+    // 数据库中的完整播放列表（用于搜索和筛选）
+    private val _databasePlaylist = MutableStateFlow<List<Song>>(emptyList())
+    val databasePlaylist: StateFlow<List<Song>> = _databasePlaylist.asStateFlow()
 
     // media session
     private val _mediaController = MutableLiveData<MediaController?>()
@@ -103,6 +123,26 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _isCoverLoading = MutableStateFlow(false)
     val isCoverLoading: StateFlow<Boolean> = _isCoverLoading.asStateFlow()
 
+    // 搜索相关状态
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _searchResults = MutableStateFlow<List<SearchResult>>(emptyList())
+    val searchResults: StateFlow<List<SearchResult>> = _searchResults.asStateFlow()
+
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+
+    private val _searchHistory = MutableStateFlow<List<SearchHistory>>(emptyList())
+    val searchHistory: StateFlow<List<SearchHistory>> = _searchHistory.asStateFlow()
+
+    // 搜索管理器
+    private val searchManager = SearchManager(application.applicationContext, database.searchIndexDao())
+    private val searchHistoryManager = SearchHistoryManager(database.searchHistoryDao())
+
+    // 搜索防抖
+    private var searchJob: Job? = null
+
     // 获取音频焦点
     private var audioFocusRequest: AudioFocusRequest? = null
 
@@ -114,6 +154,9 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val seekDebounceTime = 300L // 防抖延迟时间（毫秒）
     private var _isSeeking = MutableStateFlow(false)
     val isSeeking: StateFlow<Boolean> = _isSeeking.asStateFlow()
+
+    private val repository = SongRepository(database.songDao())
+    private val TAG = "AudioPlayerViewModel"
 
     // 添加广播接收器
     private val playbackActionReceiver = object : BroadcastReceiver() {
@@ -129,6 +172,162 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     init {
         initializeMediaController()
         registerPlaybackActionReceiver()
+        // 从数据库加载播放列表
+        viewModelScope.launch {
+            loadPlaylistFromDatabase()
+
+            // 延迟初始化搜索索引
+            delay(1000)
+            initializeSearchIndex()
+        }
+
+        // 加载搜索历史
+        loadSearchHistory()
+        // 初始化时异步建立索引
+        viewModelScope.launch {
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val allSongs = repository.getAllSongs()
+                    if (allSongs.isNotEmpty()) {
+                        searchManager.buildIndexForSongs(allSongs)
+                        Log.d(TAG, "已为 ${allSongs.size} 首歌曲建立搜索索引")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "建立搜索索引失败: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * 初始化搜索索引
+     */
+    private suspend fun initializeSearchIndex() {
+        try {
+            val songs = _databasePlaylist.value
+            if (songs.isNotEmpty()) {
+                searchManager.buildIndexForSongs(songs)
+                Log.d("PlayerViewModel", "搜索索引初始化完成，${songs.size} 首歌曲")
+            }
+        } catch (e: Exception) {
+            Log.e("PlayerViewModel", "初始化搜索索引失败", e)
+        }
+    }
+
+    /**
+     * 执行搜索
+     */
+    fun search(query: String) {
+        if (query == _searchQuery.value && _searchResults.value.isNotEmpty()) {
+            return
+        }
+
+        _searchQuery.value = query
+        _isSearching.value = true
+
+        // 取消之前的搜索任务
+        searchJob?.cancel()
+
+        // 执行搜索
+        searchJob = viewModelScope.launch {
+            try {
+                val results = if (query.isBlank()) {
+                    emptyList()
+                } else {
+                    searchManager.search(query, _databasePlaylist.value)
+                }
+
+                _searchResults.value = results
+
+                // 保存搜索历史
+                if (query.isNotBlank() && results.isNotEmpty()) {
+                    searchHistoryManager.addSearchHistory(query, results.size)
+                    loadSearchHistory()
+                }
+
+            } catch (e: Exception) {
+                Log.e("PlayerViewModel", "搜索失败", e)
+                _errorMessage.value = "搜索失败: ${e.message}"
+                _searchResults.value = emptyList()
+            } finally {
+                _isSearching.value = false
+            }
+        }
+    }
+
+    /**
+     * 清除搜索
+     */
+    fun clearSearch() {
+        searchJob?.cancel()
+        _searchQuery.value = ""
+        _searchResults.value = emptyList()
+        _isSearching.value = false
+    }
+
+    /**
+     * 加载搜索历史
+     */
+    private fun loadSearchHistory() {
+        viewModelScope.launch {
+            try {
+                val history = searchHistoryManager.getSearchHistory()
+                _searchHistory.value = history
+            } catch (e: Exception) {
+                Log.e("PlayerViewModel", "加载搜索历史失败", e)
+            }
+        }
+    }
+
+    /**
+     * 删除搜索历史
+     */
+    suspend fun deleteSearchHistory(historyId: String) {
+        searchHistoryManager.deleteSearchHistory(historyId)
+        loadSearchHistory()
+    }
+
+    /**
+     * 清空所有搜索历史
+     */
+    suspend fun clearAllSearchHistory() {
+        searchHistoryManager.clearAllHistory()
+        loadSearchHistory()
+    }
+
+    /**
+     * 置顶搜索历史
+     */
+    suspend fun togglePinSearchHistory(historyId: String, pinned: Boolean) {
+        searchHistoryManager.togglePin(historyId, pinned)
+        loadSearchHistory()
+    }
+
+    /**
+     * 为新歌曲建立索引
+     */
+    suspend fun buildIndexForNewSongs(songs: List<Song>) {
+        songs.forEach { song ->
+            searchManager.buildIndexForSong(song)
+        }
+    }
+    // 从数据库加载播放列表
+    private suspend fun loadPlaylistFromDatabase() {
+        try {
+            val songs = songRepository.getAllSongs()
+            _databasePlaylist.value = songs
+
+            // 如果内存中的播放列表为空，则使用数据库中的列表
+            if (_playlist.value.isEmpty()) {
+                _playlist.value = songs
+                updateMediaControllerPlaylist(songs)
+            }
+
+            Log.d("PlayerViewModel", "从数据库加载了 ${songs.size} 首歌曲")
+        } catch (e: Exception) {
+            Log.e("PlayerViewModel", "加载数据库播放列表失败", e)
+            _errorMessage.value = "加载播放列表失败: ${e.message}"
+        }
     }
 
     private fun registerPlaybackActionReceiver() {
@@ -143,7 +342,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             )
         } else {
             // Android 8.0 以下的旧方法
-            appContext.registerReceiver(playbackActionReceiver, filter)
+            ContextCompat.registerReceiver(
+                appContext,
+                playbackActionReceiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
         }
     }
 
@@ -487,6 +691,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
                     // 启动进度更新
                     startProgressUpdates()
+                    updatePlayStatistics(song.id)
 
                     // 在后台加载歌词和封面
                     if (!fromExternal) {
@@ -545,6 +750,25 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     _isSeeking.value = false
                 }
             }
+        }
+    }
+
+    fun setPlaylistFromDatabase(songs: List<Song>) {
+        _playlist.value = songs
+        _currentPlaylist.value = songs
+
+        // 异步更新 MediaController 的播放列表
+        viewModelScope.launch {
+            updateMediaControllerPlaylist(songs)
+        }
+    }
+
+    // 切换收藏状态
+    suspend fun toggleFavorite(songId: String, isFavorite: Boolean) {
+        try {
+            songRepository.toggleFavorite(songId, isFavorite)
+        } catch (e: Exception) {
+            Log.e("PlayerViewModel", "切换收藏状态失败", e)
         }
     }
 
@@ -619,6 +843,11 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private suspend fun updateMediaControllerPlaylist(songs: List<Song>) {
         withContext(Dispatchers.Main) {
             _mediaController.value?.let { player ->
+                // 保存当前播放状态
+                val currentMediaId = player.currentMediaItem?.mediaId
+                val currentPosition = player.currentPosition
+                val isPlaying = player.isPlaying
+
                 // 将歌曲列表转换为 MediaItem 列表
                 val mediaItems = songs.map { song ->
                     MediaItem.Builder()
@@ -635,18 +864,23 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         .build()
                 }
 
-                // 设置播放列表并保持当前播放位置
-                val currentMediaId = player.currentMediaItem?.mediaId
-                val currentIndex = if (currentMediaId != null) {
-                    songs.indexOfFirst { it.id == currentMediaId }
-                } else -1
-
                 // 设置新的播放列表
                 player.setMediaItems(mediaItems)
 
-                // 如果之前有正在播放的歌曲，跳转到相应位置
-                if (currentIndex >= 0 && currentIndex < songs.size) {
-                    player.seekTo(currentIndex, 0)
+                // 如果之前有正在播放的歌曲，恢复播放状态
+                if (currentMediaId != null) {
+                    val currentIndex = songs.indexOfFirst { it.id == currentMediaId }
+                    if (currentIndex >= 0 && currentIndex < songs.size) {
+                        // 跳转到之前的播放位置
+                        player.seekTo(currentIndex, currentPosition)
+
+                        // 恢复播放状态
+                        if (isPlaying) {
+                            player.play()
+                            _isPlaying.value = true
+                            startProgressUpdates()
+                        }
+                    }
                 }
             }
         }
@@ -665,15 +899,18 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _isLoading.value = true
 
         try {
-            // 在 IO 线程中处理文件解析
+            // 解析文件为 Song 对象
             val newSongs = withContext(Dispatchers.IO) {
                 files.mapNotNull { (uri, fileName) ->
                     createSongFromUri(appContext, uri, fileName)
                 }
             }
 
-            // 在主线程中更新状态
-            withContext(Dispatchers.Main) {
+            if (newSongs.isNotEmpty()) {
+                // 保存到数据库
+                songRepository.addSongs(newSongs)
+
+                // 更新内存中的播放列表
                 val currentList = _playlist.value.toMutableList()
                 val uniqueNewSongs = newSongs.filter { newSong ->
                     currentList.none { existingSong -> existingSong.id == newSong.id }
@@ -683,24 +920,26 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     currentList.addAll(uniqueNewSongs)
                     _playlist.value = currentList
 
-                    // 异步更新 MediaController 的播放列表
-                    viewModelScope.launch {
-                        updateMediaControllerPlaylist(currentList)
-                    }
+                    // 更新数据库播放列表引用
+                    _databasePlaylist.value = _databasePlaylist.value + uniqueNewSongs
+
+                    // 为新歌曲建立搜索索引
+                    searchManager.buildIndexForSongs(uniqueNewSongs)
+
+                    Log.d("PlayerViewModel", "成功添加 ${uniqueNewSongs.size} 首新歌曲")
+                }
+
+                // 异步更新 MediaController 的播放列表
+                viewModelScope.launch {
+                    updateMediaControllerPlaylist(currentList)
                 }
             }
 
         } catch (e: Exception) {
             e.printStackTrace()
-            // 在主线程中更新错误状态
-            withContext(Dispatchers.Main) {
-                _errorMessage.value = "添加歌曲失败: ${e.message}"
-            }
+            _errorMessage.value = "添加歌曲失败: ${e.message}"
         } finally {
-            // 在主线程中更新加载状态
-            withContext(Dispatchers.Main) {
-                _isLoading.value = false
-            }
+            _isLoading.value = false
         }
     }
 
@@ -709,7 +948,15 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             try {
                 val musicInfo = MusicMetadataUtils.parseMusicInfo(appContext, uri, fileName)
 
-                val id = "file_${uri.toString().hashCode()}"
+                // 使用统一的方法创建 ID
+                val id = Song.createId(uri.toString())
+
+                // 检查是否已存在
+                val existingSong = songRepository.getSongByUri(uri.toString())
+                if (existingSong != null) {
+                    Log.d("PlayerViewModel", "歌曲已存在: ${existingSong.title}")
+                    return@withContext null
+                }
 
                 Song(
                     id = id,
@@ -717,13 +964,41 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     artist = musicInfo.artist,
                     duration = musicInfo.duration,
                     uri = uri.toString(),
+                    album = "",
                     hasMetadata = musicInfo.hasMetadata,
-                    coverUri = musicInfo.coverUri, // 添加封面URI
-                    hasEmbeddedCover = musicInfo.hasEmbeddedCover // 添加内嵌封面信息
+                    coverUri = musicInfo.coverUri,
+                    hasEmbeddedCover = musicInfo.hasEmbeddedCover,
+                    // 这些字段需要其他方式获取：
+                    lrcCachePath = "", // 初始化时为空
+                    lyricSource = "", // 初始化时为空
+                    filePath = uri.path ?: "", // 尝试从Uri中提取路径
+                    fileSize = File(uri.path).takeIf { it.exists() }?.length() ?: 0L, // 通过File对象获取
+                    trackNumber = 0,
+                    discNumber = 1,
+                    isFavorite = false,
+                    bitrate = 0,
+                    sampleRate = 0,
+                    channels = 2,
+                    fileFormat = fileName.substringAfterLast(".", ""),
+                    genre = "",
+                    year = 0,
+                    tags = "",
+                    audioFeatures = ""
                 )
             } catch (e: Exception) {
                 e.printStackTrace()
                 null
+            }
+        }
+    }
+
+    private fun updatePlayStatistics(songId: String) {
+        viewModelScope.launch {
+            try {
+                songRepository.updatePlayStats(songId)
+                Log.d("PlayerViewModel", "更新了歌曲 $songId 的播放统计")
+            } catch (e: Exception) {
+                Log.e("PlayerViewModel", "更新播放统计失败", e)
             }
         }
     }
@@ -752,6 +1027,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         stopProgressUpdates()
         backgroundScope.cancel()
         seekJob?.cancel() // 取消防抖任务
+        searchManager.cleanup()
 
         try {
             appContext.unregisterReceiver(playbackActionReceiver)
